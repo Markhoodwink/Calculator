@@ -19,3 +19,11 @@ app/build/
 *.jks
 *.keystore
 release-key.jks
+
+# Temporary dump & test files
+dump.xml
+sys_dump_local.xml
+ui_bs.xml
+ui_test.xml
+test_result.png
+screen_scenario1.png
