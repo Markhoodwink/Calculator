@@ -1,0 +1,845 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/layoutUnitConverter"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#0A0E17"
+    android:clickable="true"
+    android:focusable="true"
+    android:orientation="vertical"
+    android:paddingHorizontal="14dp"
+    android:paddingTop="12dp"
+    android:paddingBottom="8dp">
+
+    <!-- 1. Header Bar -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingBottom="6dp">
+
+        <TextView
+            android:id="@+id/btnConverterBack"
+            android:layout_width="wrap_content"
+            android:layout_height="32dp"
+            android:background="#1E293B"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:paddingHorizontal="12dp"
+            android:text="← РЕЖИМЫ"
+            android:textColor="#38BDF8"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tvConverterTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:maxLines="1"
+            android:text="Конвертер величин"
+            android:textColor="#F8FAFC"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/btnConverterClear"
+            android:layout_width="wrap_content"
+            android:layout_height="32dp"
+            android:paddingHorizontal="12dp"
+            android:text="Сброс"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <!-- 2. Full-Width Category Dropdown Selector -->
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/layoutCategorySelector"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:clickable="true"
+        android:focusable="true"
+        android:minHeight="46dp"
+        app:cardBackgroundColor="#1E293B"
+        app:cardCornerRadius="12dp"
+        app:cardElevation="0dp"
+        app:strokeColor="#334155"
+        app:strokeWidth="1.5dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="8dp">
+
+            <!-- Left side: Badge + Category info -->
+            <TextView
+                android:id="@+id/tvCategoryBadge"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:background="#0F172A"
+                android:gravity="center"
+                android:text="📏"
+                android:textColor="#38BDF8"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:id="@+id/tvCategoryLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Величина: "
+                        android:textColor="#94A3B8"
+                        android:textSize="12sp" />
+
+                    <TextView
+                        android:id="@+id/tvSelectedCategory"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Длина"
+                        android:textColor="#F8FAFC"
+                        android:textSize="15sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/tvSelectedCategoryUnits"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:text="мм, см, м, км, дюйм, фут..."
+                    android:textColor="#94A3B8"
+                    android:textSize="11sp" />
+            </LinearLayout>
+
+            <!-- Right side: Dropdown arrow indicator -->
+            <TextView
+                android:id="@+id/tvCategoryDropdownArrow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:background="#0C4A6E"
+                android:paddingHorizontal="8dp"
+                android:paddingVertical="4dp"
+                android:text="▾"
+                android:textColor="#38BDF8"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
+
+    <!-- 3. Quick Preset Chips -->
+    <HorizontalScrollView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:overScrollMode="never"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:id="@+id/layoutConverterPresets"
+            android:layout_width="wrap_content"
+            android:layout_height="28dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal" />
+    </HorizontalScrollView>
+
+    <!-- 4. Primary Conversion Card -->
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/cardConverterMain"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        app:cardBackgroundColor="#1E293B"
+        app:cardCornerRadius="16dp"
+        app:cardElevation="2dp"
+        app:strokeColor="#334155"
+        app:strokeWidth="1.5dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="12dp">
+
+            <!-- Top Row: ИЗ -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:layout_width="20dp"
+                        android:layout_height="wrap_content"
+                        android:text="ИЗ"
+                        android:textColor="#94A3B8"
+                        android:textSize="10sp"
+                        android:textStyle="bold" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnFromUnit"
+                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="38dp"
+                        android:layout_marginStart="4dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:minHeight="38dp"
+                        android:paddingHorizontal="10dp"
+                        android:text="метр (м) ▾"
+                        android:textAllCaps="false"
+                        android:textColor="#F8FAFC"
+                        android:textSize="12sp"
+                        app:cornerRadius="10dp"
+                        app:strokeColor="#334155"
+                        app:strokeWidth="1dp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/boxFromValue"
+                    android:layout_width="0dp"
+                    android:layout_height="42dp"
+                    android:layout_marginStart="10dp"
+                    android:layout_weight="1"
+                    android:gravity="center_vertical|end"
+                    android:paddingHorizontal="12dp">
+
+                    <TextView
+                        android:id="@+id/tvFromValue"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:gravity="end"
+                        android:maxLines="1"
+                        android:text="1"
+                        android:textColor="#F8FAFC"
+                        android:textSize="24sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Middle Divider & Action Bar -->
+            <View
+                android:id="@+id/dividerCardMain"
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginVertical="8dp"
+                android:background="#334155" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnSwapUnits"
+                    style="@style/Widget.MaterialComponents.Button"
+                    android:layout_width="38dp"
+                    android:layout_height="38dp"
+                    android:backgroundTint="#0284C7"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:minWidth="38dp"
+                    android:minHeight="38dp"
+                    android:padding="0dp"
+                    android:text="⇅"
+                    android:textColor="#FFFFFF"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    app:cornerRadius="10dp" />
+
+                <View
+                    android:layout_width="0dp"
+                    android:layout_height="1dp"
+                    android:layout_weight="1" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnCopyConverted"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:minHeight="32dp"
+                    android:paddingHorizontal="10dp"
+                    android:text="Копировать"
+                    android:textAllCaps="false"
+                    android:textColor="#38BDF8"
+                    android:textSize="11sp"
+                    android:textStyle="bold"
+                    app:cornerRadius="8dp"
+                    app:strokeColor="#0284C7"
+                    app:strokeWidth="1dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnSendToCalc"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:layout_marginStart="6dp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:minHeight="32dp"
+                    android:paddingHorizontal="10dp"
+                    android:text="В калькулятор"
+                    android:textAllCaps="false"
+                    android:textColor="#38BDF8"
+                    android:textSize="11sp"
+                    android:textStyle="bold"
+                    app:cornerRadius="8dp"
+                    app:strokeColor="#0284C7"
+                    app:strokeWidth="1dp" />
+            </LinearLayout>
+
+            <!-- Bottom Row: В -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:layout_width="20dp"
+                        android:layout_height="wrap_content"
+                        android:text="В"
+                        android:textColor="#94A3B8"
+                        android:textSize="10sp"
+                        android:textStyle="bold" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnToUnit"
+                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="38dp"
+                        android:layout_marginStart="4dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:minHeight="38dp"
+                        android:paddingHorizontal="10dp"
+                        android:text="сантиметр (см) ▾"
+                        android:textAllCaps="false"
+                        android:textColor="#F8FAFC"
+                        android:textSize="12sp"
+                        app:cornerRadius="10dp"
+                        app:strokeColor="#334155"
+                        app:strokeWidth="1dp" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/tvToValue"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    android:layout_weight="1"
+                    android:gravity="end"
+                    android:maxLines="1"
+                    android:text="100"
+                    android:textColor="#10B981"
+                    android:textSize="24sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
+
+    <!-- 5. Live Multi-Unit List (All conversions) -->
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="8dp"
+        android:layout_weight="1"
+        android:overScrollMode="never">
+
+        <LinearLayout
+            android:id="@+id/containerAllConversions"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+    </ScrollView>
+
+    <!-- 6. Built-in Ergonomic Numpad -->
+    <LinearLayout
+        android:id="@+id/layoutConverterKeypad"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:background="@android:color/transparent"
+        android:orientation="vertical"
+        android:padding="0dp">
+
+        <!-- Row 1: 7 8 9 ⌫ -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:baselineAligned="false"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnConv7"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="2.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#1E293B"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:stateListAnimator="@null"
+                android:text="7"
+                android:textColor="#F8FAFC"
+                android:textSize="19sp"
+                app:cornerRadius="10dp"
+                app:elevation="0dp"
+                app:strokeColor="#334155"
+                app:strokeWidth="1dp" />
+
+            <com.google.android.material.button.MaterialButton
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnConv8"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="2.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#1E293B"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:stateListAnimator="@null"
+                android:text="8"
+                android:textColor="#F8FAFC"
+                android:textSize="19sp"
+                app:cornerRadius="10dp"
+                app:elevation="0dp"
+                app:strokeColor="#334155"
+                app:strokeWidth="1dp" />
+
+            <com.google.android.material.button.MaterialButton
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnConv9"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="2.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#1E293B"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:stateListAnimator="@null"
+                android:text="9"
+                android:textColor="#F8FAFC"
+                android:textSize="19sp"
+                app:cornerRadius="10dp"
+                app:elevation="0dp"
+                app:strokeColor="#334155"
+                app:strokeWidth="1dp" />
+
+            <com.google.android.material.button.MaterialButton
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnConvDel"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="2.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#451A1A"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:stateListAnimator="@null"
+                android:text="⌫"
+                android:textColor="#FCA5A5"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                app:cornerRadius="10dp"
+                app:elevation="0dp"
+                app:strokeColor="#7F1D1D"
+                app:strokeWidth="1dp" />
+        </LinearLayout>
+
+        <!-- Row 2: 4 5 6 C -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:baselineAligned="false"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnConv4"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="2.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#1E293B"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:stateListAnimator="@null"
+                android:text="4"
+                android:textColor="#F8FAFC"
+                android:textSize="19sp"
+                app:cornerRadius="10dp"
+                app:elevation="0dp"
+                app:strokeColor="#334155"
+                app:strokeWidth="1dp" />
+
+            <com.google.android.material.button.MaterialButton
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnConv5"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="2.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#1E293B"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:stateListAnimator="@null"
+                android:text="5"
+                android:textColor="#F8FAFC"
+                android:textSize="19sp"
+                app:cornerRadius="10dp"
+                app:elevation="0dp"
+                app:strokeColor="#334155"
+                app:strokeWidth="1dp" />
+
+            <com.google.android.material.button.MaterialButton
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnConv6"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="2.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#1E293B"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:stateListAnimator="@null"
+                android:text="6"
+                android:textColor="#F8FAFC"
+                android:textSize="19sp"
+                app:cornerRadius="10dp"
+                app:elevation="0dp"
+                app:strokeColor="#334155"
+                app:strokeWidth="1dp" />
+
+            <com.google.android.material.button.MaterialButton
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnConvClear"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="2.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#451A1A"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:stateListAnimator="@null"
+                android:text="C"
+                android:textColor="#FCA5A5"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                app:cornerRadius="10dp"
+                app:elevation="0dp"
+                app:strokeColor="#7F1D1D"
+                app:strokeWidth="1dp" />
+        </LinearLayout>
+
+        <!-- Row 3: 1 2 3 ± -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:baselineAligned="false"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnConv1"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="2.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#1E293B"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:stateListAnimator="@null"
+                android:text="1"
+                android:textColor="#F8FAFC"
+                android:textSize="19sp"
+                app:cornerRadius="10dp"
+                app:elevation="0dp"
+                app:strokeColor="#334155"
+                app:strokeWidth="1dp" />
+
+            <com.google.android.material.button.MaterialButton
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnConv2"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="2.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#1E293B"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:stateListAnimator="@null"
+                android:text="2"
+                android:textColor="#F8FAFC"
+                android:textSize="19sp"
+                app:cornerRadius="10dp"
+                app:elevation="0dp"
+                app:strokeColor="#334155"
+                app:strokeWidth="1dp" />
+
+            <com.google.android.material.button.MaterialButton
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnConv3"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="2.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#1E293B"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:stateListAnimator="@null"
+                android:text="3"
+                android:textColor="#F8FAFC"
+                android:textSize="19sp"
+                app:cornerRadius="10dp"
+                app:elevation="0dp"
+                app:strokeColor="#334155"
+                app:strokeWidth="1dp" />
+
+            <com.google.android.material.button.MaterialButton
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnConvSign"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="2.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#162032"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:stateListAnimator="@null"
+                android:text="±"
+                android:textColor="#38BDF8"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                app:cornerRadius="10dp"
+                app:elevation="0dp"
+                app:strokeColor="#293548"
+                app:strokeWidth="1dp" />
+        </LinearLayout>
+
+        <!-- Row 4: 0 . 00 000 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:baselineAligned="false"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnConv0"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="2.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#1E293B"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:stateListAnimator="@null"
+                android:text="0"
+                android:textColor="#F8FAFC"
+                android:textSize="19sp"
+                app:cornerRadius="10dp"
+                app:elevation="0dp"
+                app:strokeColor="#334155"
+                app:strokeWidth="1dp" />
+
+            <com.google.android.material.button.MaterialButton
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnConvDot"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="2.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#1E293B"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:stateListAnimator="@null"
+                android:text="."
+                android:textColor="#F8FAFC"
+                android:textSize="19sp"
+                app:cornerRadius="10dp"
+                app:elevation="0dp"
+                app:strokeColor="#334155"
+                app:strokeWidth="1dp" />
+
+            <com.google.android.material.button.MaterialButton
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnConv00"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="2.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#162032"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:stateListAnimator="@null"
+                android:text="00"
+                android:textColor="#CBD5E1"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                app:cornerRadius="10dp"
+                app:elevation="0dp"
+                app:strokeColor="#293548"
+                app:strokeWidth="1dp" />
+
+            <com.google.android.material.button.MaterialButton
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnConvTripleZero"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="2.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#162032"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:stateListAnimator="@null"
+                android:text="000"
+                android:textColor="#CBD5E1"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                app:cornerRadius="10dp"
+                app:elevation="0dp"
+                app:strokeColor="#293548"
+                app:strokeWidth="1dp" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

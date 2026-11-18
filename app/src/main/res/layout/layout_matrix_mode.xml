@@ -1,0 +1,810 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/layoutMatrixMode"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#0A0E17"
+    android:clickable="true"
+    android:focusable="true"
+    android:orientation="vertical">
+
+    <!-- ВЕРХНЯЯ ПАНЕЛЬ -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="14dp"
+        android:paddingTop="12dp"
+        android:paddingBottom="8dp">
+
+        <TextView
+            android:id="@+id/btnMatrixBack"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="#1E293B"
+            android:clickable="true"
+            android:focusable="true"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="5dp"
+            android:text="← РЕЖИМЫ"
+            android:textColor="#38BDF8"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tvMatrixTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="Матрицы"
+            android:textColor="#F8FAFC"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/btnMatrixClear"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="#1E293B"
+            android:clickable="true"
+            android:focusable="true"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="5dp"
+            android:text="Очистить"
+            android:textColor="#EF4444"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <!-- ПАНЕЛЬ ВЫБОРА РАЗМЕРА И РЕДАКТИРУЕМОЙ МАТРИЦЫ (В 1 СТРОКУ) -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingHorizontal="10dp"
+        android:paddingBottom="8dp">
+
+        <Button
+            style="@style/Widget.MaterialComponents.Button"
+            android:id="@+id/btnMatSize2x2"
+            android:layout_width="0dp"
+            android:layout_height="36dp"
+            android:layout_weight="1"
+            android:layout_marginHorizontal="2dp"
+            android:backgroundTint="#0284C7"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:padding="0dp"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            app:cornerRadius="6dp"
+            android:text="2×2"
+            android:textColor="#FFFFFF"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:textAllCaps="false" />
+
+        <Button
+            style="@style/Widget.MaterialComponents.Button"
+            android:id="@+id/btnMatSize3x3"
+            android:layout_width="0dp"
+            android:layout_height="36dp"
+            android:layout_weight="1"
+            android:layout_marginHorizontal="2dp"
+            android:backgroundTint="#1E293B"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:padding="0dp"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            app:cornerRadius="6dp"
+            android:text="3×3"
+            android:textColor="#94A3B8"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:textAllCaps="false" />
+
+        <View
+            android:layout_width="1dp"
+            android:layout_height="24dp"
+            android:layout_gravity="center_vertical"
+            android:layout_marginHorizontal="3dp"
+            android:background="#334155" />
+
+        <Button
+            style="@style/Widget.MaterialComponents.Button"
+            android:id="@+id/tabMatA"
+            android:layout_width="0dp"
+            android:layout_height="36dp"
+            android:layout_weight="1"
+            android:layout_marginHorizontal="2dp"
+            android:backgroundTint="#7C3AED"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:padding="0dp"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            app:cornerRadius="6dp"
+            android:text="Матрица A"
+            android:textColor="#FFFFFF"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:textAllCaps="false" />
+
+        <Button
+            style="@style/Widget.MaterialComponents.Button"
+            android:id="@+id/tabMatB"
+            android:layout_width="0dp"
+            android:layout_height="36dp"
+            android:layout_weight="1"
+            android:layout_marginHorizontal="2dp"
+            android:backgroundTint="#1E293B"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:padding="0dp"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            app:cornerRadius="6dp"
+            android:text="Матрица B"
+            android:textColor="#94A3B8"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:textAllCaps="false" />
+    </LinearLayout>
+
+    <!-- РАБОЧАЯ ОБЛАСТЬ (SCROLLVIEW) -->
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="10dp"
+            android:paddingBottom="6dp">
+
+            <!-- КАРТОЧКА ВВОДА АКТИВНОЙ МАТРИЦЫ -->
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:cardBackgroundColor="#1E293B"
+                app:cardCornerRadius="12dp"
+                app:cardElevation="0dp"
+                app:strokeColor="#334155"
+                app:strokeWidth="1.5dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="12dp">
+
+                    <TextView
+                        android:id="@+id/tvMatrixInputTitle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Матрица A (2×2)"
+                        android:textColor="#F8FAFC"
+                        android:textSize="14sp"
+                        android:textStyle="bold" />
+
+                    <LinearLayout
+                        android:id="@+id/containerMatrixGrid"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:orientation="vertical" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <!-- ПАНЕЛЬ ОПЕРАЦИЙ (2 РЯДА ПО 3 КНОПКИ) -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:orientation="vertical">
+
+                <!-- Ряд 1: det(A), A⁻¹, Aᵀ -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="38dp"
+                    android:baselineAligned="false"
+                    android:orientation="horizontal">
+
+                    <Button
+                        style="@style/Widget.MaterialComponents.Button"
+                        android:id="@+id/btnMatDet"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1"
+                        android:layout_margin="2dp"
+                        android:backgroundTint="#1E293B"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:minWidth="0dp"
+                        android:minHeight="0dp"
+                        android:padding="0dp"
+                        app:cornerRadius="8dp"
+                        app:strokeColor="#7C3AED"
+                        app:strokeWidth="1dp"
+                        android:text="det(A)"
+                        android:textColor="#C084FC"
+                        android:textSize="13sp"
+                        android:textStyle="bold"
+                        android:textAllCaps="false" />
+
+                    <Button
+                        style="@style/Widget.MaterialComponents.Button"
+                        android:id="@+id/btnMatInv"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1"
+                        android:layout_margin="2dp"
+                        android:backgroundTint="#1E293B"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:minWidth="0dp"
+                        android:minHeight="0dp"
+                        android:padding="0dp"
+                        app:cornerRadius="8dp"
+                        app:strokeColor="#7C3AED"
+                        app:strokeWidth="1dp"
+                        android:text="A⁻¹"
+                        android:textColor="#C084FC"
+                        android:textSize="13sp"
+                        android:textStyle="bold"
+                        android:textAllCaps="false" />
+
+                    <Button
+                        style="@style/Widget.MaterialComponents.Button"
+                        android:id="@+id/btnMatTrans"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1"
+                        android:layout_margin="2dp"
+                        android:backgroundTint="#1E293B"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:minWidth="0dp"
+                        android:minHeight="0dp"
+                        android:padding="0dp"
+                        app:cornerRadius="8dp"
+                        app:strokeColor="#7C3AED"
+                        app:strokeWidth="1dp"
+                        android:text="Aᵀ"
+                        android:textColor="#C084FC"
+                        android:textSize="13sp"
+                        android:textStyle="bold"
+                        android:textAllCaps="false" />
+                </LinearLayout>
+
+                <!-- Ряд 2: A + B, A − B, A × B -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="38dp"
+                    android:layout_marginTop="2dp"
+                    android:baselineAligned="false"
+                    android:orientation="horizontal">
+
+                    <Button
+                        style="@style/Widget.MaterialComponents.Button"
+                        android:id="@+id/btnMatAdd"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1"
+                        android:layout_margin="2dp"
+                        android:backgroundTint="#1E293B"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:minWidth="0dp"
+                        android:minHeight="0dp"
+                        android:padding="0dp"
+                        app:cornerRadius="8dp"
+                        app:strokeColor="#7C3AED"
+                        app:strokeWidth="1dp"
+                        android:text="A + B"
+                        android:textColor="#C084FC"
+                        android:textSize="13sp"
+                        android:textStyle="bold"
+                        android:textAllCaps="false" />
+
+                    <Button
+                        style="@style/Widget.MaterialComponents.Button"
+                        android:id="@+id/btnMatSub"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1"
+                        android:layout_margin="2dp"
+                        android:backgroundTint="#1E293B"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:minWidth="0dp"
+                        android:minHeight="0dp"
+                        android:padding="0dp"
+                        app:cornerRadius="8dp"
+                        app:strokeColor="#7C3AED"
+                        app:strokeWidth="1dp"
+                        android:text="A − B"
+                        android:textColor="#C084FC"
+                        android:textSize="13sp"
+                        android:textStyle="bold"
+                        android:textAllCaps="false" />
+
+                    <Button
+                        style="@style/Widget.MaterialComponents.Button"
+                        android:id="@+id/btnMatMul"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1"
+                        android:layout_margin="2dp"
+                        android:backgroundTint="#1E293B"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:minWidth="0dp"
+                        android:minHeight="0dp"
+                        android:padding="0dp"
+                        app:cornerRadius="8dp"
+                        app:strokeColor="#7C3AED"
+                        app:strokeWidth="1dp"
+                        android:text="A × B"
+                        android:textColor="#C084FC"
+                        android:textSize="13sp"
+                        android:textStyle="bold"
+                        android:textAllCaps="false" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- КАРТОЧКА РЕЗУЛЬТАТА -->
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/cardMatrixResult"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                app:cardBackgroundColor="#1E293B"
+                app:cardCornerRadius="12dp"
+                app:cardElevation="0dp"
+                app:strokeColor="#A855F7"
+                app:strokeWidth="1.5dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="12dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/tvMatrixResultTitle"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="Результат:"
+                            android:textColor="#C084FC"
+                            android:textSize="13sp"
+                            android:textStyle="bold" />
+
+                        <Button
+                            style="@style/Widget.MaterialComponents.Button"
+                            android:id="@+id/btnUseResultAsA"
+                            android:layout_width="wrap_content"
+                            android:layout_height="32dp"
+                            android:layout_marginEnd="6dp"
+                            android:backgroundTint="#0F172A"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
+                            android:minWidth="0dp"
+                            android:minHeight="0dp"
+                            android:paddingHorizontal="10dp"
+                            android:paddingVertical="0dp"
+                            android:text="В A"
+                            android:textAllCaps="false"
+                            android:textColor="#C084FC"
+                            android:textSize="11sp"
+                            android:textStyle="bold"
+                            app:cornerRadius="6dp"
+                            app:strokeColor="#A855F7"
+                            app:strokeWidth="1dp" />
+
+                        <Button
+                            style="@style/Widget.MaterialComponents.Button"
+                            android:id="@+id/btnCopyMatrixResult"
+                            android:layout_width="wrap_content"
+                            android:layout_height="32dp"
+                            android:backgroundTint="#0F172A"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
+                            android:minWidth="0dp"
+                            android:minHeight="0dp"
+                            android:paddingHorizontal="10dp"
+                            android:paddingVertical="0dp"
+                            android:text="Копировать"
+                            android:textAllCaps="false"
+                            android:textColor="#38BDF8"
+                            android:textSize="11sp"
+                            android:textStyle="bold"
+                            app:cornerRadius="6dp"
+                            app:strokeColor="#334155"
+                            app:strokeWidth="1dp" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/containerMatrixResult"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:orientation="vertical"
+                        android:minHeight="32dp" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+        </LinearLayout>
+    </ScrollView>
+
+    <!-- ВСТРОЕННАЯ КОМПАКТНАЯ КЛАВИАТУРА ВВОДА (ВНИЗУ ЭКРАНА, 4×4) -->
+    <LinearLayout
+        android:id="@+id/layoutMatrixKeypad"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#0F172A"
+        android:orientation="vertical"
+        android:paddingHorizontal="6dp"
+        android:paddingTop="4dp"
+        android:paddingBottom="6dp">
+
+        <!-- Ряд 1: 7 8 9 DEL -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="42dp"
+            android:baselineAligned="false"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnMat7"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#1A222D"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="7"
+                android:textColor="#FFFFFF"
+                android:textSize="18sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnMat8"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#1A222D"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="8"
+                android:textColor="#FFFFFF"
+                android:textSize="18sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnMat9"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#1A222D"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="9"
+                android:textColor="#FFFFFF"
+                android:textSize="18sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnMatDel"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#3B1824"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="DEL"
+                android:textColor="#F87171"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:textAllCaps="false" />
+        </LinearLayout>
+
+        <!-- Ряд 2: 4 5 6 / -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="42dp"
+            android:baselineAligned="false"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnMat4"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#1A222D"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="4"
+                android:textColor="#FFFFFF"
+                android:textSize="18sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnMat5"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#1A222D"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="5"
+                android:textColor="#FFFFFF"
+                android:textSize="18sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnMat6"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#1A222D"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="6"
+                android:textColor="#FFFFFF"
+                android:textSize="18sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnMatDiv"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#243042"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="/"
+                android:textColor="#93C5FD"
+                android:textSize="18sp"
+                android:textAllCaps="false" />
+        </LinearLayout>
+
+        <!-- Ряд 3: 1 2 3 − -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="42dp"
+            android:baselineAligned="false"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnMat1"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#1A222D"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="1"
+                android:textColor="#FFFFFF"
+                android:textSize="18sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnMat2"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#1A222D"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="2"
+                android:textColor="#FFFFFF"
+                android:textSize="18sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnMat3"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#1A222D"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="3"
+                android:textColor="#FFFFFF"
+                android:textSize="18sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnMatMinus"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#243042"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="−"
+                android:textColor="#93C5FD"
+                android:textSize="18sp"
+                android:textAllCaps="false" />
+        </LinearLayout>
+
+        <!-- Ряд 4: 0 . След. det(A) -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="42dp"
+            android:baselineAligned="false"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnMat0"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#1A222D"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="0"
+                android:textColor="#FFFFFF"
+                android:textSize="18sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnMatDot"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#243042"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="."
+                android:textColor="#93C5FD"
+                android:textSize="18sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnMatNext"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#1E293B"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="След."
+                android:textColor="#38BDF8"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnMatKeyDet"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#581C87"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                app:strokeColor="#A855F7"
+                app:strokeWidth="1dp"
+                android:text="det(A)"
+                android:textColor="#F3E8FF"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:textAllCaps="false" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

@@ -1,0 +1,1945 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/mainRootLayout"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#0A0E17"
+    android:fitsSystemWindows="true">
+
+    <!-- ОСНОВНОЙ КОНТЕЙНЕР КАЛЬКУЛЯТОРА -->
+    <LinearLayout
+        android:id="@+id/layoutCalculator"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#0A0E17"
+        android:orientation="vertical">
+
+    <!-- КОРПУС LCD-ЭКРАНА CASIO 991ES PLUS -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="#CBD5D0"
+        android:orientation="vertical"
+        android:paddingHorizontal="12dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="10dp">
+
+        <!-- Верхняя строка статуса матрицы -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/btnOpenMenu"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="0dp"
+                android:background="#1E293B"
+                android:clickable="true"
+                android:focusable="true"
+                android:paddingHorizontal="6dp"
+                android:paddingVertical="2dp"
+                android:text="≡ РЕЖИМЫ"
+                android:textColor="#38BDF8"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/btnHistory"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:background="#1E293B"
+                android:clickable="true"
+                android:focusable="true"
+                android:paddingHorizontal="6dp"
+                android:paddingVertical="2dp"
+                android:text="⏱ ИСТОРИЯ"
+                android:textColor="#F59E0B"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+
+            <!-- Индикатор режима SHIFT -->
+            <TextView
+                android:id="@+id/tvShiftIndicator"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:paddingHorizontal="5dp"
+                android:paddingVertical="2dp"
+                android:text="S"
+                android:textColor="#F59E0B"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:visibility="invisible" />
+
+            <View
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
+
+            <TextView
+                android:id="@+id/btnCalcThemeToggle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="6dp"
+                android:background="@drawable/bg_calc_theme_chip"
+                android:clickable="true"
+                android:focusable="true"
+                android:paddingHorizontal="6dp"
+                android:paddingVertical="2dp"
+                android:text="☀"
+                android:textColor="#F59E0B"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tvAngleMode"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="#1E293B"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center"
+                android:minHeight="28dp"
+                android:paddingHorizontal="8dp"
+                android:paddingVertical="4dp"
+                android:text="DEG"
+                android:textColor="#0F172A"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- ГРАФИЧЕСКИЙ ДИСПЛЕЙ CASIO (ВВОД СВЕРХУ + РЕЗУЛЬТАТ СНИЗУ СПРАВА) -->
+        <com.example.calculator.CasioDisplayView
+            android:id="@+id/casioDisplay"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:layout_marginTop="2dp" />
+
+        <!-- Панель действий: Решить уравнение, S<=>D и Чипы переменных -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:paddingBottom="2dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnSolveEquation"
+                android:layout_width="wrap_content"
+                android:layout_height="34dp"
+                android:minWidth="0dp"
+                android:backgroundTint="#0284C7"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:paddingHorizontal="8dp"
+                android:text="Решить ур-ие"
+                android:textColor="#FFFFFF"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnToggleFraction"
+                android:layout_width="wrap_content"
+                android:layout_height="34dp"
+                android:layout_marginStart="4dp"
+                android:minWidth="46dp"
+                android:paddingHorizontal="11dp"
+                app:strokeWidth="0dp"
+                android:backgroundTint="#1E293B"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:text="S⇔D"
+                android:textColor="#F59E0B"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <com.google.android.material.button.MaterialButton
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnCasSteps"
+                android:layout_width="wrap_content"
+                android:layout_height="34dp"
+                android:layout_marginStart="4dp"
+                android:paddingHorizontal="8dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                app:cornerRadius="8dp"
+                android:text="📖 Шаги"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:textAllCaps="false"
+                android:visibility="gone" />
+
+            <HorizontalScrollView
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:scrollbars="none">
+
+                <LinearLayout
+                    android:id="@+id/layoutVarChips"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal" />
+            </HorizontalScrollView>
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- КРУГЛЫЙ REPLAY D-PAD -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="46dp"
+        android:background="#0F172A"
+        android:baselineAligned="false"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="14dp">
+
+        <Button
+            style="@style/Widget.MaterialComponents.Button"
+            android:id="@+id/btnArrowLeft"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="2dp"
+            android:backgroundTint="#1E293B"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:insetLeft="0dp"
+            android:insetRight="0dp"
+            android:padding="0dp"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:includeFontPadding="false"
+            app:cornerRadius="4dp"
+            android:gravity="center"
+            android:text="◄"
+            android:textColor="#38BDF8"
+            android:textSize="12sp"
+            android:textAllCaps="false" />
+
+        <Button
+            style="@style/Widget.MaterialComponents.Button"
+            android:id="@+id/btnArrowUp"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="2dp"
+            android:backgroundTint="#1E293B"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:insetLeft="0dp"
+            android:insetRight="0dp"
+            android:padding="0dp"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:includeFontPadding="false"
+            app:cornerRadius="4dp"
+            android:gravity="center"
+            android:text="▲ Числ"
+            android:textColor="#F59E0B"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:textAllCaps="false" />
+
+        <Button
+            style="@style/Widget.MaterialComponents.Button"
+            android:id="@+id/btnArrowDown"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="2dp"
+            android:backgroundTint="#1E293B"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:insetLeft="0dp"
+            android:insetRight="0dp"
+            android:padding="0dp"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:includeFontPadding="false"
+            app:cornerRadius="4dp"
+            android:gravity="center"
+            android:text="▼ Знам"
+            android:textColor="#F59E0B"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:textAllCaps="false" />
+
+        <Button
+            style="@style/Widget.MaterialComponents.Button"
+            android:id="@+id/btnArrowRight"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="2dp"
+            android:backgroundTint="#1E293B"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:insetLeft="0dp"
+            android:insetRight="0dp"
+            android:padding="0dp"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:includeFontPadding="false"
+            app:cornerRadius="4dp"
+            android:gravity="center"
+            android:text="►"
+            android:textColor="#38BDF8"
+            android:textSize="12sp"
+            android:textAllCaps="false" />
+    </LinearLayout>
+
+    <!-- ИНЖЕНЕРНАЯ КЛАВИАТУРА -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#0B0F15"
+        android:orientation="vertical"
+        android:padding="2dp">
+
+        <!-- Ряд 0: SHIFT + функциональные с двойным назначением -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:baselineAligned="false"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnShift"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#1A3A1A"
+                android:padding="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:includeFontPadding="false"
+                app:cornerRadius="4dp"
+                android:gravity="center"
+                android:text="SHIFT"
+                android:textColor="#A3E635"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:singleLine="true"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnSin"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#1E293B"
+                android:padding="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:includeFontPadding="false"
+                app:cornerRadius="4dp"
+                android:gravity="center"
+                android:lineSpacingExtra="-2dp"
+                android:maxLines="2"
+                android:text="sin"
+                android:textColor="#E2E8F0"
+                android:textSize="13sp"
+                android:textAllCaps="false"
+                tools:text="sin⁻¹&#10;sin" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnCos"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#1E293B"
+                android:padding="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:includeFontPadding="false"
+                app:cornerRadius="4dp"
+                android:gravity="center"
+                android:lineSpacingExtra="-2dp"
+                android:maxLines="2"
+                android:text="cos"
+                android:textColor="#E2E8F0"
+                android:textSize="13sp"
+                android:textAllCaps="false"
+                tools:text="cos⁻¹&#10;cos" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnTan"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#1E293B"
+                android:padding="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:includeFontPadding="false"
+                app:cornerRadius="4dp"
+                android:gravity="center"
+                android:lineSpacingExtra="-2dp"
+                android:maxLines="2"
+                android:text="tan"
+                android:textColor="#E2E8F0"
+                android:textSize="13sp"
+                android:textAllCaps="false"
+                tools:text="tan⁻¹&#10;tan" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnLn"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#243042"
+                android:padding="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:includeFontPadding="false"
+                app:cornerRadius="4dp"
+                android:gravity="center"
+                android:lineSpacingExtra="-2dp"
+                android:maxLines="2"
+                android:text="ln"
+                android:textColor="#F1F5F9"
+                android:textSize="13sp"
+                android:textAllCaps="false"
+                tools:text="eˣ&#10;ln" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnLog"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#243042"
+                android:padding="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:includeFontPadding="false"
+                app:cornerRadius="4dp"
+                android:gravity="center"
+                android:lineSpacingExtra="-2dp"
+                android:maxLines="2"
+                android:text="log"
+                android:textColor="#F1F5F9"
+                android:textSize="13sp"
+                android:textAllCaps="false"
+                tools:text="10ˣ&#10;log" />
+        </LinearLayout>
+
+        <!-- Ряд 1: Научные функции Casio (Дробь, √, x², x^□, π, (, )) -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:baselineAligned="false"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnFraction"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#243042"
+                android:padding="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:includeFontPadding="false"
+                app:cornerRadius="4dp"
+                android:gravity="center"
+                android:lineSpacingExtra="-2dp"
+                android:maxLines="2"
+                android:text="■/□"
+                android:textColor="#F59E0B"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:textAllCaps="false"
+                tools:text="■ ■/□&#10;■/□" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnSqrt"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#243042"
+                android:padding="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:includeFontPadding="false"
+                app:cornerRadius="4dp"
+                android:gravity="center"
+                android:lineSpacingExtra="-2dp"
+                android:maxLines="2"
+                android:text="√"
+                android:textColor="#F1F5F9"
+                android:textSize="16sp"
+                android:textAllCaps="false"
+                tools:text="³√&#10;√" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnSquare"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#243042"
+                android:padding="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:includeFontPadding="false"
+                app:cornerRadius="4dp"
+                android:gravity="center"
+                android:lineSpacingExtra="-2dp"
+                android:maxLines="2"
+                android:text="x²"
+                android:textColor="#38BDF8"
+                android:textSize="14sp"
+                android:textAllCaps="false"
+                tools:text="x³&#10;x²" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnPow"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#243042"
+                android:padding="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:includeFontPadding="false"
+                app:cornerRadius="4dp"
+                android:gravity="center"
+                android:lineSpacingExtra="-2dp"
+                android:maxLines="2"
+                android:text="x^□"
+                android:textColor="#38BDF8"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:textAllCaps="false"
+                tools:text="x⁻¹&#10;x^□" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnPi"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#1E293B"
+                android:padding="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:includeFontPadding="false"
+                app:cornerRadius="4dp"
+                android:gravity="center"
+                android:lineSpacingExtra="-2dp"
+                android:maxLines="2"
+                android:text="π"
+                android:textColor="#F59E0B"
+                android:textSize="15sp"
+                android:textAllCaps="false"
+                tools:text="CONST&#10;π" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnOpenBracket"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#243042"
+                android:padding="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:includeFontPadding="false"
+                app:cornerRadius="4dp"
+                android:gravity="center"
+                android:lineSpacingExtra="-2dp"
+                android:maxLines="2"
+                android:text="("
+                android:textColor="#F1F5F9"
+                android:textSize="16sp"
+                android:textAllCaps="false"
+                tools:text="x!&#10;(" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnCloseBracket"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#243042"
+                android:padding="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:includeFontPadding="false"
+                app:cornerRadius="4dp"
+                android:gravity="center"
+                android:lineSpacingExtra="-2dp"
+                android:maxLines="2"
+                android:text=")"
+                android:textColor="#F1F5F9"
+                android:textSize="16sp"
+                android:textAllCaps="false"
+                tools:text="%&#10;)" />
+        </LinearLayout>
+
+        <!-- Ряд 2: Переменные формул и ENG -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:baselineAligned="false"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnVarX"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#1E293B"
+                android:padding="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:includeFontPadding="false"
+                app:cornerRadius="4dp"
+                android:gravity="center"
+                android:singleLine="true"
+                android:maxLines="1"
+                android:text="x"
+                android:textColor="#38BDF8"
+                android:textSize="16sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnVarY"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#1E293B"
+                android:padding="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:includeFontPadding="false"
+                app:cornerRadius="4dp"
+                android:gravity="center"
+                android:singleLine="true"
+                android:maxLines="1"
+                android:text="y"
+                android:textColor="#38BDF8"
+                android:textSize="16sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnVarA"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#1E293B"
+                android:padding="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:includeFontPadding="false"
+                app:cornerRadius="4dp"
+                android:gravity="center"
+                android:singleLine="true"
+                android:maxLines="1"
+                android:text="a"
+                android:textColor="#38BDF8"
+                android:textSize="16sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnVarM"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#1E293B"
+                android:padding="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:includeFontPadding="false"
+                app:cornerRadius="4dp"
+                android:gravity="center"
+                android:singleLine="true"
+                android:maxLines="1"
+                android:text="m"
+                android:textColor="#38BDF8"
+                android:textSize="16sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnVarT"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#1E293B"
+                android:padding="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:includeFontPadding="false"
+                app:cornerRadius="4dp"
+                android:gravity="center"
+                android:singleLine="true"
+                android:maxLines="1"
+                android:text="t"
+                android:textColor="#38BDF8"
+                android:textSize="16sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnVarV"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#1E293B"
+                android:padding="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:includeFontPadding="false"
+                app:cornerRadius="4dp"
+                android:gravity="center"
+                android:singleLine="true"
+                android:maxLines="1"
+                android:text="v"
+                android:textColor="#38BDF8"
+                android:textSize="16sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnEng"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1.2"
+                android:layout_margin="2dp"
+                android:backgroundTint="#243042"
+                android:padding="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:includeFontPadding="false"
+                app:cornerRadius="4dp"
+                android:gravity="center"
+                android:singleLine="true"
+                android:maxLines="1"
+                android:text="ENG"
+                android:textColor="#38BDF8"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:textAllCaps="false" />
+        </LinearLayout>
+
+        <!-- Ряд 3: 7 8 9 ÷ DEL -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:baselineAligned="false"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btn7"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#1A222D"
+                android:padding="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:includeFontPadding="false"
+                app:cornerRadius="4dp"
+                android:gravity="center"
+                android:singleLine="true"
+                android:maxLines="1"
+                android:text="7"
+                android:textColor="#FFFFFF"
+                android:textSize="19sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btn8"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#1A222D"
+                android:padding="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:includeFontPadding="false"
+                app:cornerRadius="4dp"
+                android:gravity="center"
+                android:singleLine="true"
+                android:maxLines="1"
+                android:text="8"
+                android:textColor="#FFFFFF"
+                android:textSize="19sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btn9"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#1A222D"
+                android:padding="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:includeFontPadding="false"
+                app:cornerRadius="4dp"
+                android:gravity="center"
+                android:singleLine="true"
+                android:maxLines="1"
+                android:text="9"
+                android:textColor="#FFFFFF"
+                android:textSize="19sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnDiv"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#243042"
+                android:padding="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:includeFontPadding="false"
+                app:cornerRadius="4dp"
+                android:gravity="center"
+                android:singleLine="true"
+                android:maxLines="1"
+                android:text="÷"
+                android:textColor="#93C5FD"
+                android:textSize="20sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnDel"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#7F1D1D"
+                android:padding="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:includeFontPadding="false"
+                app:cornerRadius="4dp"
+                android:gravity="center"
+                android:singleLine="true"
+                android:maxLines="1"
+                android:text="DEL"
+                android:textColor="#FCA5A5"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:textAllCaps="false" />
+        </LinearLayout>
+
+        <!-- Ряд 4: 4 5 6 × AC -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:baselineAligned="false"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btn4"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#1A222D"
+                android:padding="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:includeFontPadding="false"
+                app:cornerRadius="4dp"
+                android:gravity="center"
+                android:singleLine="true"
+                android:maxLines="1"
+                android:text="4"
+                android:textColor="#FFFFFF"
+                android:textSize="19sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btn5"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#1A222D"
+                android:padding="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:includeFontPadding="false"
+                app:cornerRadius="4dp"
+                android:gravity="center"
+                android:singleLine="true"
+                android:maxLines="1"
+                android:text="5"
+                android:textColor="#FFFFFF"
+                android:textSize="19sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btn6"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#1A222D"
+                android:padding="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:includeFontPadding="false"
+                app:cornerRadius="4dp"
+                android:gravity="center"
+                android:singleLine="true"
+                android:maxLines="1"
+                android:text="6"
+                android:textColor="#FFFFFF"
+                android:textSize="19sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnMul"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#243042"
+                android:padding="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:includeFontPadding="false"
+                app:cornerRadius="4dp"
+                android:gravity="center"
+                android:singleLine="true"
+                android:maxLines="1"
+                android:text="×"
+                android:textColor="#93C5FD"
+                android:textSize="20sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnAc"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#991B1B"
+                android:padding="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:includeFontPadding="false"
+                app:cornerRadius="4dp"
+                android:gravity="center"
+                android:singleLine="true"
+                android:maxLines="1"
+                android:text="AC"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:textAllCaps="false" />
+        </LinearLayout>
+
+        <!-- Ряд 5: 1 2 3 − SOLVE -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:baselineAligned="false"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btn1"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#1A222D"
+                android:padding="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:includeFontPadding="false"
+                app:cornerRadius="4dp"
+                android:gravity="center"
+                android:singleLine="true"
+                android:maxLines="1"
+                android:text="1"
+                android:textColor="#FFFFFF"
+                android:textSize="19sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btn2"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#1A222D"
+                android:padding="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:includeFontPadding="false"
+                app:cornerRadius="4dp"
+                android:gravity="center"
+                android:singleLine="true"
+                android:maxLines="1"
+                android:text="2"
+                android:textColor="#FFFFFF"
+                android:textSize="19sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btn3"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#1A222D"
+                android:padding="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:includeFontPadding="false"
+                app:cornerRadius="4dp"
+                android:gravity="center"
+                android:singleLine="true"
+                android:maxLines="1"
+                android:text="3"
+                android:textColor="#FFFFFF"
+                android:textSize="19sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnSub"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#243042"
+                android:padding="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:includeFontPadding="false"
+                app:cornerRadius="4dp"
+                android:gravity="center"
+                android:singleLine="true"
+                android:maxLines="1"
+                android:text="−"
+                android:textColor="#93C5FD"
+                android:textSize="20sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnAns"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#243042"
+                android:padding="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:includeFontPadding="false"
+                app:cornerRadius="4dp"
+                android:gravity="center"
+                android:singleLine="true"
+                android:maxLines="1"
+                android:text="Ans"
+                android:textColor="#38BDF8"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:textAllCaps="false" />
+        </LinearLayout>
+
+        <!-- Ряд 6: 0 . = + EXE -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:baselineAligned="false"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btn0"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#1A222D"
+                android:padding="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:includeFontPadding="false"
+                app:cornerRadius="4dp"
+                android:gravity="center"
+                android:singleLine="true"
+                android:maxLines="1"
+                android:text="0"
+                android:textColor="#FFFFFF"
+                android:textSize="19sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnDot"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#1A222D"
+                android:padding="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:includeFontPadding="false"
+                app:cornerRadius="4dp"
+                android:gravity="center"
+                android:singleLine="true"
+                android:maxLines="1"
+                android:text="."
+                android:textColor="#FFFFFF"
+                android:textSize="19sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnEqualsSign"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#243042"
+                android:padding="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:includeFontPadding="false"
+                app:cornerRadius="4dp"
+                android:gravity="center"
+                android:singleLine="true"
+                android:maxLines="1"
+                android:text="="
+                android:textColor="#F59E0B"
+                android:textSize="20sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnAdd"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#243042"
+                android:padding="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:includeFontPadding="false"
+                app:cornerRadius="4dp"
+                android:gravity="center"
+                android:singleLine="true"
+                android:maxLines="1"
+                android:text="+"
+                android:textColor="#93C5FD"
+                android:textSize="20sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnExecute"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="2dp"
+                android:backgroundTint="#059669"
+                android:padding="0dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:insetLeft="0dp"
+                android:insetRight="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:includeFontPadding="false"
+                app:cornerRadius="4dp"
+                android:gravity="center"
+                android:singleLine="true"
+                android:maxLines="1"
+                android:text="EXE ="
+                android:textColor="#FFFFFF"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:textAllCaps="false" />
+        </LinearLayout>
+    </LinearLayout>
+    </LinearLayout>
+
+    <!-- РЕЖИМ: СИСТЕМЫ И ПОЛИНОМЫ -->
+    <include
+        layout="@layout/layout_system_solver"
+        android:visibility="gone" />
+
+    <!-- РЕЖИМ: ГРАФИКИ И ТАБЛИЦА -->
+    <include
+        layout="@layout/layout_graph_mode"
+        android:visibility="gone" />
+
+    <!-- РЕЖИМ: МАТРИЦЫ -->
+    <include
+        layout="@layout/layout_matrix_mode"
+        android:visibility="gone" />
+
+    <!-- РЕЖИМ: ТРИГОНОМЕТРИЯ (ЕГЭ) -->
+    <include
+        layout="@layout/layout_trig_solver"
+        android:visibility="gone" />
+
+    <!-- РЕЖИМ: 3D СЕЧЕНИЯ -->
+    <include
+        layout="@layout/layout_section_3d"
+        android:visibility="gone" />
+
+    <!-- РЕЖИМ: КОНВЕРТЕР ВЕЛИЧИН -->
+    <include
+        layout="@layout/layout_unit_converter"
+        android:visibility="gone" />
+
+    <!-- СТАРТОВЫЙ ОВЕРЛЕЙ / ЭКРАН ВЫБОРА РЕЖИМОВ -->
+    <FrameLayout
+        android:id="@+id/layoutModeHub"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#0A0E17"
+        android:clickable="true"
+        android:focusable="true"
+        android:visibility="visible">
+
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:overScrollMode="never">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingHorizontal="20dp"
+                android:paddingTop="28dp"
+                android:paddingBottom="24dp">
+
+                <!-- Header bar: Title left, btnOpenGuide & btnToggleTheme right -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:layout_marginBottom="22dp">
+
+                    <TextView
+                        android:id="@+id/tvHubTitle"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="MB-CAL"
+                        android:textColor="#F8FAFC"
+                        android:textSize="26sp"
+                        android:textStyle="bold"
+                        android:letterSpacing="0.04" />
+
+                    <TextView
+                        android:id="@+id/btnOpenGuide"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:gravity="center"
+                        android:paddingHorizontal="12dp"
+                        android:paddingVertical="7dp"
+                        android:layout_marginEnd="8dp"
+                        android:text="📖 Гайд"
+                        android:textColor="#38BDF8"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/btnToggleTheme"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/bg_theme_toggle_pill"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:gravity="center"
+                        android:paddingHorizontal="14dp"
+                        android:paddingVertical="7dp"
+                        android:text="☀ Светлая"
+                        android:textColor="#F8FAFC"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <!-- 1. Featured Hero Card (cardModeCalc) -->
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/cardModeCalc"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:clickable="true"
+                    android:focusable="true"
+                    app:cardBackgroundColor="#1E293B"
+                    app:cardCornerRadius="16dp"
+                    app:cardElevation="0dp"
+                    app:strokeColor="#334155"
+                    app:strokeWidth="1.5dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:padding="16dp">
+
+                        <TextView
+                            android:id="@+id/badgeModeCalc"
+                            android:layout_width="46dp"
+                            android:layout_height="46dp"
+                            android:background="@drawable/bg_mode_badge"
+                            android:gravity="center"
+                            android:text="½"
+                            android:textColor="#38BDF8"
+                            android:textSize="20sp"
+                            android:textStyle="bold" />
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:layout_marginStart="14dp"
+                            android:layout_marginEnd="8dp"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:id="@+id/tvModeCalcTitle"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Вычисления (CAS)"
+                                android:textColor="#F8FAFC"
+                                android:textSize="16sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tvModeCalcDesc"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:lineSpacingExtra="2dp"
+                                android:text="2D-дроби, тригонометрия, константы и уравнения"
+                                android:textColor="#94A3B8"
+                                android:textSize="12sp" />
+                        </LinearLayout>
+
+                        <TextView
+                            android:id="@+id/chevronModeCalc"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="→"
+                            android:textColor="#64748B"
+                            android:textSize="18sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- 2. Two-column row with cardModeSystem & cardModeGraph -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:orientation="horizontal">
+
+                    <!-- cardModeSystem -->
+                    <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/cardModeSystem"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="6dp"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:minHeight="132dp"
+                        app:cardBackgroundColor="#1E293B"
+                        app:cardCornerRadius="16dp"
+                        app:cardElevation="0dp"
+                        app:strokeColor="#334155"
+                        app:strokeWidth="1.5dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:minHeight="132dp"
+                            android:orientation="vertical"
+                            android:padding="14dp">
+
+                            <TextView
+                                android:id="@+id/badgeModeSystem"
+                                android:layout_width="40dp"
+                                android:layout_height="40dp"
+                                android:background="@drawable/bg_mode_badge"
+                                android:gravity="center"
+                                android:text="x²"
+                                android:textColor="#F59E0B"
+                                android:textSize="18sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tvModeSystemTitle"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="10dp"
+                                android:text="Системы уравнений"
+                                android:textColor="#F8FAFC"
+                                android:textSize="15sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tvModeSystemDesc"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:lineSpacingExtra="2dp"
+                                android:text="Произвольные системы: x - y = 2, 2y - x = 4"
+                                android:textColor="#94A3B8"
+                                android:textSize="12sp" />
+                        </LinearLayout>
+                    </com.google.android.material.card.MaterialCardView>
+
+                    <!-- cardModeGraph -->
+                    <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/cardModeGraph"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="6dp"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:minHeight="132dp"
+                        app:cardBackgroundColor="#1E293B"
+                        app:cardCornerRadius="16dp"
+                        app:cardElevation="0dp"
+                        app:strokeColor="#334155"
+                        app:strokeWidth="1.5dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:minHeight="132dp"
+                            android:orientation="vertical"
+                            android:padding="14dp">
+
+                            <TextView
+                                android:id="@+id/badgeModeGraph"
+                                android:layout_width="40dp"
+                                android:layout_height="40dp"
+                                android:background="@drawable/bg_mode_badge"
+                                android:gravity="center"
+                                android:text="f(x)"
+                                android:textColor="#10B981"
+                                android:textSize="16sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tvModeGraphTitle"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="10dp"
+                                android:text="Графики"
+                                android:textColor="#F8FAFC"
+                                android:textSize="15sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tvModeGraphDesc"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:lineSpacingExtra="2dp"
+                                android:text="Интерактивные кривые, точки и таблица"
+                                android:textColor="#94A3B8"
+                                android:textSize="12sp" />
+                        </LinearLayout>
+                    </com.google.android.material.card.MaterialCardView>
+                </LinearLayout>
+
+                <!-- 3. Two-column row with cardModeTrig & cardModeSection3D -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:orientation="horizontal">
+
+                    <!-- cardModeTrig -->
+                    <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/cardModeTrig"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="6dp"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:minHeight="132dp"
+                        app:cardBackgroundColor="#1E293B"
+                        app:cardCornerRadius="16dp"
+                        app:cardElevation="0dp"
+                        app:strokeColor="#334155"
+                        app:strokeWidth="1.5dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:minHeight="132dp"
+                            android:orientation="vertical"
+                            android:padding="14dp">
+
+                            <TextView
+                                android:id="@+id/badgeModeTrig"
+                                android:layout_width="40dp"
+                                android:layout_height="40dp"
+                                android:background="@drawable/bg_mode_badge"
+                                android:gravity="center"
+                                android:text="sin"
+                                android:textColor="#EC4899"
+                                android:textSize="15sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tvModeTrigTitle"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="10dp"
+                                android:text="Тригонометрия"
+                                android:textColor="#F8FAFC"
+                                android:textSize="15sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tvModeTrigDesc"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:lineSpacingExtra="2dp"
+                                android:text="Уравнения и отбор корней [a; b]"
+                                android:textColor="#94A3B8"
+                                android:textSize="12sp" />
+                        </LinearLayout>
+                    </com.google.android.material.card.MaterialCardView>
+
+                    <!-- cardModeSection3D -->
+                    <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/cardModeSection3D"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="6dp"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:minHeight="132dp"
+                        app:cardBackgroundColor="#1E293B"
+                        app:cardCornerRadius="16dp"
+                        app:cardElevation="0dp"
+                        app:strokeColor="#334155"
+                        app:strokeWidth="1.5dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:minHeight="132dp"
+                            android:orientation="vertical"
+                            android:padding="14dp">
+
+                            <TextView
+                                android:id="@+id/badgeModeSection3D"
+                                android:layout_width="40dp"
+                                android:layout_height="40dp"
+                                android:background="@drawable/bg_mode_badge"
+                                android:gravity="center"
+                                android:text="⬡"
+                                android:textColor="#06B6D4"
+                                android:textSize="18sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tvModeSection3DTitle"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="10dp"
+                                android:text="3D Сечения"
+                                android:textColor="#F8FAFC"
+                                android:textSize="15sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tvModeSection3DDesc"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:lineSpacingExtra="2dp"
+                                android:text="Построение сечений многогранников"
+                                android:textColor="#94A3B8"
+                                android:textSize="12sp" />
+                        </LinearLayout>
+                    </com.google.android.material.card.MaterialCardView>
+                </LinearLayout>
+
+                <!-- 4. Two-column row with cardModeMatrix & cardModeConverter -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:orientation="horizontal">
+
+                    <!-- cardModeMatrix -->
+                    <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/cardModeMatrix"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="6dp"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:minHeight="132dp"
+                        app:cardBackgroundColor="#1E293B"
+                        app:cardCornerRadius="16dp"
+                        app:cardElevation="0dp"
+                        app:strokeColor="#334155"
+                        app:strokeWidth="1.5dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:minHeight="132dp"
+                            android:orientation="vertical"
+                            android:padding="14dp">
+
+                            <TextView
+                                android:id="@+id/badgeModeMatrix"
+                                android:layout_width="40dp"
+                                android:layout_height="40dp"
+                                android:background="@drawable/bg_mode_badge"
+                                android:gravity="center"
+                                android:text="[M]"
+                                android:textColor="#A855F7"
+                                android:textSize="18sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tvModeMatrixTitle"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="10dp"
+                                android:text="Матрицы"
+                                android:textColor="#F8FAFC"
+                                android:textSize="15sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tvModeMatrixDesc"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:lineSpacingExtra="2dp"
+                                android:text="Определитель det(A), A⁻¹ и операции"
+                                android:textColor="#94A3B8"
+                                android:textSize="12sp" />
+                        </LinearLayout>
+                    </com.google.android.material.card.MaterialCardView>
+
+                    <!-- cardModeConverter -->
+                    <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/cardModeConverter"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="6dp"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:minHeight="132dp"
+                        app:cardBackgroundColor="#1E293B"
+                        app:cardCornerRadius="16dp"
+                        app:cardElevation="0dp"
+                        app:strokeColor="#334155"
+                        app:strokeWidth="1.5dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:minHeight="132dp"
+                            android:orientation="vertical"
+                            android:padding="14dp">
+
+                            <TextView
+                                android:id="@+id/badgeModeConverter"
+                                android:layout_width="40dp"
+                                android:layout_height="40dp"
+                                android:background="@drawable/bg_mode_badge"
+                                android:gravity="center"
+                                android:text="⇄"
+                                android:textColor="#10B981"
+                                android:textSize="18sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tvModeConverterTitle"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="10dp"
+                                android:text="Конвертер величин"
+                                android:textColor="#F8FAFC"
+                                android:textSize="15sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tvModeConverterDesc"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:lineSpacingExtra="2dp"
+                                android:text="Длина, объём, скорость, давление, данные"
+                                android:textColor="#94A3B8"
+                                android:textSize="12sp" />
+                        </LinearLayout>
+                    </com.google.android.material.card.MaterialCardView>
+                </LinearLayout>
+
+                <!-- 5. Subtle footer label -->
+                <TextView
+                    android:id="@+id/tvHubFooter"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="24dp"
+                    android:gravity="center"
+                    android:text="Инженерный CAS калькулятор"
+                    android:textColor="#64748B"
+                    android:textSize="12sp" />
+            </LinearLayout>
+        </ScrollView>
+    </FrameLayout>
+</FrameLayout>

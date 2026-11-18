@@ -1,0 +1,1196 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/layoutGraphMode"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#0A0E17"
+    android:clickable="true"
+    android:focusable="true"
+    android:orientation="vertical">
+
+    <!-- ВЕРХНЯЯ ПАНЕЛЬ -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="14dp"
+        android:paddingTop="12dp"
+        android:paddingBottom="8dp">
+
+        <TextView
+            android:id="@+id/btnGraphBack"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="#1E293B"
+            android:clickable="true"
+            android:focusable="true"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="5dp"
+            android:text="← РЕЖИМЫ"
+            android:textColor="#38BDF8"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tvGraphTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:maxLines="1"
+            android:text="Графики"
+            android:textColor="#F8FAFC"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/btnGraphReset"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="#1E293B"
+            android:clickable="true"
+            android:focusable="true"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="5dp"
+            android:text="Сброс"
+            android:textColor="#38BDF8"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <!-- ПАНЕЛЬ УПРАВЛЕНИЯ СПИСКОМ ГРАФИКОВ -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="10dp"
+        android:paddingBottom="4dp">
+
+        <Button
+            style="@style/Widget.MaterialComponents.Button"
+            android:id="@+id/btnAddGraphSeries"
+            android:layout_width="0dp"
+            android:layout_height="36dp"
+            android:layout_weight="1"
+            android:layout_marginEnd="6dp"
+            android:backgroundTint="#0284C7"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="0dp"
+            android:text="+ Добавить"
+            android:textAllCaps="false"
+            android:textColor="#FFFFFF"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            app:cornerRadius="6dp" />
+
+        <Button
+            style="@style/Widget.MaterialComponents.Button"
+            android:id="@+id/btnGraphHome"
+            android:layout_width="38dp"
+            android:layout_height="36dp"
+            android:layout_marginEnd="6dp"
+            android:backgroundTint="#1E293B"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:padding="0dp"
+            android:text="⌂"
+            android:textColor="#38BDF8"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            app:cornerRadius="6dp"
+            app:strokeColor="#334155"
+            app:strokeWidth="1.2dp" />
+
+        <Button
+            style="@style/Widget.MaterialComponents.Button"
+            android:id="@+id/btnGraphPlot"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:backgroundTint="#10B981"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="0dp"
+            android:text="ПОСТРОИТЬ"
+            android:textAllCaps="false"
+            android:textColor="#FFFFFF"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            app:cornerRadius="6dp" />
+    </LinearLayout>
+
+    <!-- СКРОЛЛ СПИСКА ГРАФИКОВ (до 135dp) -->
+    <ScrollView
+        android:id="@+id/scrollGraphSeries"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:maxHeight="135dp"
+        android:fillViewport="true"
+        android:overScrollMode="never"
+        android:paddingHorizontal="10dp"
+        android:paddingBottom="2dp">
+
+        <LinearLayout
+            android:id="@+id/containerGraphSeriesList"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+    </ScrollView>
+
+    <!-- КОНТЕЙНЕР ПОЛЗУНКОВ ПАРАМЕТРОВ (a, b, k...) -->
+    <LinearLayout
+        android:id="@+id/containerParameterSliders"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingHorizontal="10dp"
+        android:paddingBottom="4dp" />
+
+    <!-- ПЕРЕКЛЮЧАТЕЛЬ ВКЛАДОК (2 КНОПКИ) -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingHorizontal="10dp"
+        android:paddingBottom="6dp">
+
+        <Button
+            style="@style/Widget.MaterialComponents.Button"
+            android:id="@+id/tabGraphPlot"
+            android:layout_width="0dp"
+            android:layout_height="36dp"
+            android:layout_weight="1"
+            android:layout_marginEnd="4dp"
+            android:backgroundTint="#0284C7"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:padding="0dp"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            app:cornerRadius="6dp"
+            android:text="График"
+            android:textColor="#FFFFFF"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:textAllCaps="false" />
+
+        <Button
+            style="@style/Widget.MaterialComponents.Button"
+            android:id="@+id/tabGraphTable"
+            android:layout_width="0dp"
+            android:layout_height="36dp"
+            android:layout_weight="1"
+            android:layout_marginStart="4dp"
+            android:backgroundTint="#1E293B"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:padding="0dp"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            app:cornerRadius="6dp"
+            android:text="Таблица значений"
+            android:textColor="#94A3B8"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:textAllCaps="false" />
+    </LinearLayout>
+
+    <!-- РАБОЧАЯ ОБЛАСТЬ (ГРАФИК ИЛИ ТАБЛИЦА) -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <!-- Контейнер графика -->
+        <FrameLayout
+            android:id="@+id/containerGraphPlot"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="visible">
+
+            <com.example.calculator.GraphView
+                android:id="@+id/graphView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+
+            <!-- Кнопки зума в правом нижнем углу -->
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="bottom|end"
+                android:layout_margin="10dp"
+                android:orientation="vertical">
+
+                <Button
+                    style="@style/Widget.MaterialComponents.Button"
+                    android:id="@+id/btnGraphZoomIn"
+                    android:layout_width="38dp"
+                    android:layout_height="38dp"
+                    android:layout_marginBottom="6dp"
+                    android:backgroundTint="#1E293B"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:minWidth="0dp"
+                    android:minHeight="0dp"
+                    android:padding="0dp"
+                    android:text="+"
+                    android:textColor="#F8FAFC"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    app:cornerRadius="8dp"
+                    app:strokeColor="#334155"
+                    app:strokeWidth="1.2dp" />
+
+                <Button
+                    style="@style/Widget.MaterialComponents.Button"
+                    android:id="@+id/btnGraphZoomOut"
+                    android:layout_width="38dp"
+                    android:layout_height="38dp"
+                    android:backgroundTint="#1E293B"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:minWidth="0dp"
+                    android:minHeight="0dp"
+                    android:padding="0dp"
+                    android:text="−"
+                    android:textColor="#F8FAFC"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    app:cornerRadius="8dp"
+                    app:strokeColor="#334155"
+                    app:strokeWidth="1.2dp" />
+            </LinearLayout>
+        </FrameLayout>
+
+        <!-- Контейнер таблицы -->
+        <LinearLayout
+            android:id="@+id/containerGraphTable"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:paddingHorizontal="10dp"
+            android:visibility="gone">
+
+            <!-- Строка настроек диапазона -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingVertical="4dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="От:"
+                    android:textColor="#94A3B8"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
+
+                <EditText
+                    android:id="@+id/etTableStart"
+                    android:layout_width="0dp"
+                    android:layout_height="34dp"
+                    android:layout_weight="1"
+                    android:layout_marginStart="4dp"
+                    android:layout_marginEnd="6dp"
+                    android:background="#1E293B"
+                    android:cursorVisible="true"
+                    android:gravity="center"
+                    android:paddingHorizontal="4dp"
+                    android:singleLine="true"
+                    android:text="-5"
+                    android:textColor="#F8FAFC"
+                    android:textSize="13sp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="До:"
+                    android:textColor="#94A3B8"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
+
+                <EditText
+                    android:id="@+id/etTableEnd"
+                    android:layout_width="0dp"
+                    android:layout_height="34dp"
+                    android:layout_weight="1"
+                    android:layout_marginStart="4dp"
+                    android:layout_marginEnd="6dp"
+                    android:background="#1E293B"
+                    android:cursorVisible="true"
+                    android:gravity="center"
+                    android:paddingHorizontal="4dp"
+                    android:singleLine="true"
+                    android:text="5"
+                    android:textColor="#F8FAFC"
+                    android:textSize="13sp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Шаг:"
+                    android:textColor="#94A3B8"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
+
+                <EditText
+                    android:id="@+id/etTableStep"
+                    android:layout_width="0dp"
+                    android:layout_height="34dp"
+                    android:layout_weight="1"
+                    android:layout_marginStart="4dp"
+                    android:layout_marginEnd="6dp"
+                    android:background="#1E293B"
+                    android:cursorVisible="true"
+                    android:gravity="center"
+                    android:paddingHorizontal="4dp"
+                    android:singleLine="true"
+                    android:text="1"
+                    android:textColor="#F8FAFC"
+                    android:textSize="13sp" />
+
+                <Button
+                    style="@style/Widget.MaterialComponents.Button"
+                    android:id="@+id/btnTableBuild"
+                    android:layout_width="wrap_content"
+                    android:layout_height="34dp"
+                    android:backgroundTint="#0284C7"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:minWidth="0dp"
+                    android:minHeight="0dp"
+                    android:paddingHorizontal="14dp"
+                    android:paddingVertical="0dp"
+                    android:text="OK"
+                    android:textColor="#FFFFFF"
+                    android:textSize="12sp"
+                    android:textStyle="bold"
+                    app:cornerRadius="6dp" />
+            </LinearLayout>
+
+            <!-- Заголовок таблицы (x | f(x)) -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="32dp"
+                android:layout_marginTop="4dp"
+                android:background="#1E293B"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingHorizontal="14dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="start"
+                    android:text="x"
+                    android:textColor="#38BDF8"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+
+                <View
+                    android:layout_width="1dp"
+                    android:layout_height="match_parent"
+                    android:background="#334155" />
+
+                <TextView
+                    android:id="@+id/tvTableHeaderY"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1.5"
+                    android:gravity="end"
+                    android:text="y"
+                    android:textColor="#10B981"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <!-- Список строк таблицы -->
+            <ScrollView
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:fillViewport="true"
+                android:overScrollMode="never">
+
+                <LinearLayout
+                    android:id="@+id/containerTableRows"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical" />
+            </ScrollView>
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/fabToggleGraphKeypad"
+            android:layout_width="44dp"
+            android:layout_height="38dp"
+            android:layout_gravity="bottom|end"
+            android:layout_marginEnd="64dp"
+            android:layout_marginBottom="12dp"
+            android:clickable="true"
+            android:elevation="3dp"
+            android:focusable="true"
+            android:gravity="center"
+            android:text="▼"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+    </FrameLayout>
+
+    <!-- ВСТРОЕННАЯ КЛАВИАТУРА ВВОДА (6 КОЛОНОК x 6 РЯДОВ) -->
+    <LinearLayout
+        android:id="@+id/layoutGraphKeypad"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#0A0E17"
+        android:orientation="vertical"
+        android:paddingHorizontal="6dp"
+        android:paddingTop="3dp"
+        android:paddingBottom="6dp">
+
+        <!-- Ряд 1: x  y  a  b  sin  cos -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="37dp"
+            android:baselineAligned="false"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnGraphKeyX"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="1.5dp"
+                android:backgroundTint="#0F2E22"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="x"
+                android:textColor="#10B981"
+                android:textSize="16sp"
+                android:textStyle="italic|bold"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnGraphKeyY"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="1.5dp"
+                android:backgroundTint="#0F2E22"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="y"
+                android:textColor="#10B981"
+                android:textSize="16sp"
+                android:textStyle="italic|bold"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnGraphKeyA"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="1.5dp"
+                android:backgroundTint="#1E293B"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="a"
+                android:textColor="#C084FC"
+                android:textSize="16sp"
+                android:textStyle="italic|bold"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnGraphKeyB"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="1.5dp"
+                android:backgroundTint="#1E293B"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="b"
+                android:textColor="#C084FC"
+                android:textSize="16sp"
+                android:textStyle="italic|bold"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnGraphKeySin"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="1.5dp"
+                android:backgroundTint="#243042"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="sin"
+                android:textColor="#38BDF8"
+                android:textSize="13sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnGraphKeyCos"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="1.5dp"
+                android:backgroundTint="#243042"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="cos"
+                android:textColor="#38BDF8"
+                android:textSize="13sp"
+                android:textAllCaps="false" />
+        </LinearLayout>
+
+        <!-- Ряд 2: tan  ln  π  |  <  > -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="37dp"
+            android:baselineAligned="false"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnGraphKeyTan"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="1.5dp"
+                android:backgroundTint="#243042"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="tan"
+                android:textColor="#38BDF8"
+                android:textSize="13sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnGraphKeyLn"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="1.5dp"
+                android:backgroundTint="#243042"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="ln"
+                android:textColor="#38BDF8"
+                android:textSize="13sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnGraphKeyPi"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="1.5dp"
+                android:backgroundTint="#243042"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="π"
+                android:textColor="#38BDF8"
+                android:textSize="16sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnGraphKeyAbs"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="1.5dp"
+                android:backgroundTint="#243042"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="|"
+                android:textColor="#38BDF8"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnGraphKeyLt"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="1.5dp"
+                android:backgroundTint="#1E293B"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="&lt;"
+                android:textColor="#93C5FD"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnGraphKeyGt"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="1.5dp"
+                android:backgroundTint="#1E293B"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="&gt;"
+                android:textColor="#93C5FD"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:textAllCaps="false" />
+        </LinearLayout>
+
+        <!-- Ряд 3: 7  8  9  (  )  DEL -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="37dp"
+            android:baselineAligned="false"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnGraphKey7"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="1.5dp"
+                android:backgroundTint="#1A222D"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="7"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnGraphKey8"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="1.5dp"
+                android:backgroundTint="#1A222D"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="8"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnGraphKey9"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="1.5dp"
+                android:backgroundTint="#1A222D"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="9"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnGraphKeyOpenParen"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="1.5dp"
+                android:backgroundTint="#243042"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="("
+                android:textColor="#CBD5E1"
+                android:textSize="16sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnGraphKeyCloseParen"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="1.5dp"
+                android:backgroundTint="#243042"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text=")"
+                android:textColor="#CBD5E1"
+                android:textSize="16sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnGraphKeyDel"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="1.5dp"
+                android:backgroundTint="#7F1D1D"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="DEL"
+                android:textColor="#EF4444"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:textAllCaps="false" />
+        </LinearLayout>
+
+        <!-- Ряд 4: 4  5  6  ^  √  ÷ -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="37dp"
+            android:baselineAligned="false"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnGraphKey4"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="1.5dp"
+                android:backgroundTint="#1A222D"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="4"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnGraphKey5"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="1.5dp"
+                android:backgroundTint="#1A222D"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="5"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnGraphKey6"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="1.5dp"
+                android:backgroundTint="#1A222D"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="6"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnGraphKeyPow"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="1.5dp"
+                android:backgroundTint="#243042"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="^"
+                android:textColor="#38BDF8"
+                android:textSize="16sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnGraphKeySqrt"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="1.5dp"
+                android:backgroundTint="#243042"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="√"
+                android:textColor="#38BDF8"
+                android:textSize="16sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnGraphKeyDiv"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="1.5dp"
+                android:backgroundTint="#243042"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="÷"
+                android:textColor="#38BDF8"
+                android:textSize="18sp"
+                android:textAllCaps="false" />
+        </LinearLayout>
+
+        <!-- Ряд 5: 1  2  3  +  −  · -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="37dp"
+            android:baselineAligned="false"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnGraphKey1"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="1.5dp"
+                android:backgroundTint="#1A222D"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="1"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnGraphKey2"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="1.5dp"
+                android:backgroundTint="#1A222D"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="2"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnGraphKey3"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="1.5dp"
+                android:backgroundTint="#1A222D"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="3"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnGraphKeyPlus"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="1.5dp"
+                android:backgroundTint="#243042"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="+"
+                android:textColor="#38BDF8"
+                android:textSize="17sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnGraphKeyMinus"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="1.5dp"
+                android:backgroundTint="#243042"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="−"
+                android:textColor="#38BDF8"
+                android:textSize="17sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnGraphKeyMul"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="1.5dp"
+                android:backgroundTint="#243042"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="·"
+                android:textColor="#38BDF8"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:textAllCaps="false" />
+        </LinearLayout>
+
+        <!-- Ряд 6: 0  .  =  AC  OK (weight 2) -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="37dp"
+            android:baselineAligned="false"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnGraphKey0"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="1.5dp"
+                android:backgroundTint="#1A222D"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="0"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnGraphKeyDot"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="1.5dp"
+                android:backgroundTint="#1A222D"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="."
+                android:textColor="#FFFFFF"
+                android:textSize="18sp"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnGraphKeyEq"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="1.5dp"
+                android:backgroundTint="#0369A1"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="="
+                android:textColor="#FFFFFF"
+                android:textSize="17sp"
+                android:textStyle="bold"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnGraphKeyAC"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_margin="1.5dp"
+                android:backgroundTint="#78350F"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="AC"
+                android:textColor="#FBBF24"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:textAllCaps="false" />
+
+            <Button
+                style="@style/Widget.MaterialComponents.Button"
+                android:id="@+id/btnGraphKeypadPlot"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="2"
+                android:layout_margin="1.5dp"
+                android:backgroundTint="#10B981"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                app:cornerRadius="6dp"
+                android:text="OK"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:textAllCaps="false" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

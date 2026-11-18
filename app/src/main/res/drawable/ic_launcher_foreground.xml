@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Soft Drop Shadow Layer (dx=0, dy=+2.5) -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M32,78.5L76,34.5 M32,36.5L46,52.5 M46,36.5L32,52.5 M58,60.5L65,70.5L72,60.5 M65,70.5L58,80.5"
+        android:strokeWidth="4.8"
+        android:strokeColor="#022C22"
+        android:strokeAlpha="0.12"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- Centered Diagonal Fraction Slash (/) with Emerald Gradient -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M32,76L76,32"
+        android:strokeWidth="4.0"
+        android:strokeLineCap="round">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:startX="32"
+                android:startY="76"
+                android:endX="76"
+                android:endY="32"
+                android:type="linear">
+                <item
+                    android:color="#059669"
+                    android:offset="0.0" />
+                <item
+                    android:color="#10B981"
+                    android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Upper-Left Centered Modern Geometric 'x' -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M32,34L46,50 M46,34L32,50"
+        android:strokeWidth="4.0"
+        android:strokeColor="#10B981"
+        android:strokeLineCap="round" />
+
+    <!-- Lower-Right Centered Modern Geometric 'y' -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M58,58L65,68L72,58 M65,68L58,78"
+        android:strokeWidth="4.0"
+        android:strokeColor="#10B981"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>
