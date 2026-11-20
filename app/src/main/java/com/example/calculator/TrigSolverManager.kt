@@ -66,28 +66,23 @@ class TrigSolverManager(
         initInputs()
         initKeypad()
 
-        btnTrigSolve.setOnClickListener {
-            onHaptic(it)
+        btnTrigSolve.bindCrispKey(isHeavy = true) {
             solve()
         }
 
-        btnTrigClear.setOnClickListener {
-            onHaptic(it)
+        btnTrigClear.bindCrispKey(isHeavy = true) {
             clearAll()
         }
 
-        fabToggleTrigKeypad.setOnClickListener {
-            onHaptic(it)
+        fabToggleTrigKeypad.bindCrispKey(isHeavy = true) {
             toggleKeypad()
         }
 
-        btnCopyTrigResult.setOnClickListener {
-            onHaptic(it)
+        btnCopyTrigResult.bindCrispKey(isHeavy = true) {
             copyResult()
         }
 
-        btnToggleTrigSteps.setOnClickListener {
-            onHaptic(it)
+        btnToggleTrigSteps.bindCrispKey(isHeavy = false) {
             toggleSteps()
         }
 
@@ -173,24 +168,21 @@ class TrigSolverManager(
         )
 
         for ((id, text) in keyMap) {
-            rootLayout.findViewById<Button>(id)?.setOnClickListener {
-                onHaptic(it)
+            rootLayout.findViewById<Button>(id)?.bindCrispKey(isHeavy = false) {
                 handleInput(text)
             }
         }
 
-        rootLayout.findViewById<Button>(R.id.btnTrigDel)?.setOnClickListener {
-            onHaptic(it)
+        rootLayout.findViewById<Button>(R.id.btnTrigDel)?.bindCrispKey(isHeavy = true) {
             handleDelete()
         }
         rootLayout.findViewById<Button>(R.id.btnTrigDel)?.setOnLongClickListener {
-            onHaptic(it)
+            KeyFeedback.trigger(it, isHeavy = true)
             activeCell.setText("")
             true
         }
 
-        rootLayout.findViewById<Button>(R.id.btnTrigKeypadSolve)?.setOnClickListener {
-            onHaptic(it)
+        rootLayout.findViewById<Button>(R.id.btnTrigKeypadSolve)?.bindCrispKey(isHeavy = true) {
             solve()
         }
     }

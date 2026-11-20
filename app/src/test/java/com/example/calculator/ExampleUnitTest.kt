@@ -20,7 +20,7 @@ class ExampleUnitTest {
         assertEquals("5 · 10⁻⁹", CasEngine.Fraction.formatDoubleNorm1(5e-9))
         assertEquals("-5 · 10⁻⁹", CasEngine.Fraction.formatDoubleNorm1(-5e-9))
         assertEquals("0", CasEngine.Fraction.formatDoubleNorm1(0.0))
-        assertEquals("0", CasEngine.Fraction.formatDoubleNorm1(1e-16))
+        assertEquals("1 · 10⁻¹⁶", CasEngine.Fraction.formatDoubleNorm1(1e-16))
         assertEquals("0.5", CasEngine.Fraction.formatDoubleNorm1(0.5))
         assertEquals("0.001", CasEngine.Fraction.formatDoubleNorm1(0.001))
         assertEquals("9.99 · 10⁻⁴", CasEngine.Fraction.formatDoubleNorm1(0.000999))
@@ -490,5 +490,131 @@ class ExampleUnitTest {
 
         val resExp = engine.isolateVariableFull("2^x = 8", "x")
         assertEquals("x = 3", resExp.displayFormula)
+    }
+
+    @Test
+    fun testFactorialLargeNumberNoOverflow() {
+        val engine = CasEngine()
+        val res = engine.evaluateFull("50!")
+        assertTrue("Expected displayFormula to start with '3.0414', got: ${res.displayFormula}", res.displayFormula.startsWith("3.0414"))
+        assertTrue("Expected displayFormula to contain '10⁶⁴', got: ${res.displayFormula}", res.displayFormula.contains("10⁶⁴"))
+    }
+
+    @Test
+    fun testPowerLargeNumberNoOverflow() {
+        val engine = CasEngine()
+        val res = engine.evaluateFull("2^65")
+        assertTrue("Expected displayFormula to start with '3.6893', got: ${res.displayFormula}", res.displayFormula.startsWith("3.6893"))
+        assertTrue("Expected displayFormula to contain '10¹⁹', got: ${res.displayFormula}", res.displayFormula.contains("10¹⁹"))
+    }
+
+    @Test
+    fun testSimplifyPowerProductRadical() {
+        val engine = CasEngine()
+        val res = engine.evaluateFull("(10*√(2))^2 - 25")
+        assertEquals("175", res.displayFormula)
+    }
+
+    @Test
+    fun testEvenPowerEquation() {
+        val engine = CasEngine()
+        val res = engine.isolateVariableFull("x^4 - 16 = 0", "x")
+        assertEquals("x₁ = -2;  x₂ = 2", res.displayFormula)
+    }
+
+    @Test
+    fun testBiquadraticEquation() {
+        val engine = CasEngine()
+        val res = engine.isolateVariableFull("x^4 - 5x^2 + 4 = 0", "x")
+        assertTrue(res.displayFormula.contains("-2") && res.displayFormula.contains("-1") && res.displayFormula.contains("1") && res.displayFormula.contains("2"))
+    }
+
+    @Test
+    fun testIdentityWithOdzExclusion() {
+        val engine = CasEngine()
+        val res = engine.isolateVariableFull("1/(x - 1) - 1/(x - 1) = 0", "x")
+        assertTrue("Expected displayFormula to contain 'x ≠ 1', got: ${res.displayFormula}", res.displayFormula.contains("x ≠ 1"))
+    }
+
+    @Test
+    fun testIrrationalEquationWithExtraneousRoot() {
+        val engine = CasEngine()
+        val res = engine.isolateVariableFull("√(x + 2) = x", "x")
+        assertEquals("x = 2", res.displayFormula)
+    }
+
+    @Test
+    fun testLogarithmicEquationWithExtraneousRoot() {
+        val engine = CasEngine()
+        val res = engine.isolateVariableFull("ln(x^2 - 3) = ln(2x)", "x")
+        assertEquals("x = 3", res.displayFormula)
+    }
+
+    @Test
+    fun testModulusEquationBranching() {
+        val engine = CasEngine()
+        val res = engine.isolateVariableFull("abs(x - 3) = 5", "x")
+        assertEquals("x₁ = -2;  x₂ = 8", res.displayFormula)
+    }
+
+    @Test
+    fun testEvenPowerEquationBranching() {
+        val engine = CasEngine()
+        val res = engine.isolateVariableFull("(x - 1)^4 = 16", "x")
+        assertEquals("x₁ = -1;  x₂ = 3", res.displayFormula)
+    }
+
+    @Test
+    fun testExponentialEquationQuadraticInExponent() {
+        val engine = CasEngine()
+        val res = engine.isolateVariableFull("2^(2x^2) + 2^(x^2 + 2x + 2) = 2^(5 + 4x)", "x")
+        assertTrue("Expected displayFormula to contain '1 - √3' and '1 + √3', got: ${res.displayFormula}",
+            res.displayFormula.contains("1 - √3") && res.displayFormula.contains("1 + √3"))
+    }
+
+    @Test
+    fun testExponentialEquationQuadraticBase2() {
+        val engine = CasEngine()
+        val res = engine.isolateVariableFull("4^x - 5*2^x + 4 = 0", "x")
+        assertTrue("Expected displayFormula to contain '0' and '2', got: ${res.displayFormula}",
+            res.displayFormula.contains("0") && res.displayFormula.contains("2"))
+    }
+
+    @Test
+    fun testCombinatoricsEvaluation() {
+        val engine = CasEngine()
+
+        // 1. comb(5, 2) == 10 with non-empty detailedSteps
+        val resC52 = engine.evaluateFull("comb(5, 2)")
+        assertEquals("10", resC52.displayFormula)
+        assertTrue(resC52.detailedSteps.isNotEmpty())
+
+        // 2. perm(5, 2) == 20
+        val resP52 = engine.evaluateFull("perm(5, 2)")
+        assertEquals("20", resP52.displayFormula)
+
+        // 3. comb(50, 3) == 19600 (no Long overflow)
+        val resC503 = engine.evaluateFull("comb(50, 3)")
+        assertEquals("19600", resC503.displayFormula)
+
+        // 4. comb(5, 0) == 1 and comb(5, 5) == 1
+        assertEquals("1", engine.evaluateFull("comb(5, 0)").displayFormula)
+        assertEquals("1", engine.evaluateFull("comb(5, 5)").displayFormula)
+
+        // 5. comb(3, 5) starts with "Ошибка"
+        assertTrue(engine.evaluateFull("comb(3, 5)").displayFormula.startsWith("Ошибка"))
+    }
+
+    @Test
+    fun testSchoolPhysicsConstants() {
+        val engine = CasEngine()
+
+        assertEquals("10", engine.evaluateFull("g").displayFormula)
+        assertEquals("8.31", engine.evaluateFull("R").displayFormula)
+        assertEquals("6 · 10²³", engine.evaluateFull("Nₐ").displayFormula)
+        assertEquals("9000000000", engine.evaluateFull("k").displayFormula)
+        assertEquals("1.38 · 10⁻²³", engine.evaluateFull("k_B").displayFormula)
+        assertEquals("300000000", engine.evaluateFull("c").displayFormula)
+        assertEquals("1.6 · 10⁻¹⁹", engine.evaluateFull("qₑ").displayFormula)
     }
 }

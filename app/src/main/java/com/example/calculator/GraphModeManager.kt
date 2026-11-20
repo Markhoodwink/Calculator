@@ -95,38 +95,32 @@ class GraphModeManager(
         setupZoomControls()
         setupKeypad()
 
-        fabToggleGraphKeypad.setOnClickListener {
-            onHaptic(it)
+        fabToggleGraphKeypad.bindCrispKey(isHeavy = true) {
             val isVis = layoutGraphKeypad.visibility == View.VISIBLE
             setKeypadVisible(!isVis)
         }
 
-        btnAddGraphSeries.setOnClickListener {
-            onHaptic(it)
+        btnAddGraphSeries.bindCrispKey(isHeavy = true) {
             if (seriesList.size >= 6) {
                 Toast.makeText(rootLayout.context, "Максимум 6 графиков", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
+                return@bindCrispKey
             }
             addNewSeries()
         }
 
-        btnGraphHome.setOnClickListener {
-            onHaptic(it)
+        btnGraphHome.bindCrispKey(isHeavy = false) {
             graphView.resetViewport()
         }
 
-        btnGraphPlot.setOnClickListener {
-            onHaptic(it)
+        btnGraphPlot.bindCrispKey(isHeavy = true) {
             plotAll(silent = false)
         }
 
-        btnTableBuild.setOnClickListener {
-            onHaptic(it)
+        btnTableBuild.bindCrispKey(isHeavy = true) {
             rebuildTable()
         }
 
-        btnGraphReset.setOnClickListener {
-            onHaptic(it)
+        btnGraphReset.bindCrispKey(isHeavy = true) {
             resetAll()
         }
 
@@ -188,15 +182,14 @@ class GraphModeManager(
 
         updateVisibilityCircle(visibilityView, color, item.visible)
 
-        visibilityView.setOnClickListener {
-            onHaptic(it)
+        visibilityView.bindCrispKey(isHeavy = false) {
             item.visible = !item.visible
             updateVisibilityCircle(visibilityView, item.color, item.visible)
             plotAll(silent = true)
         }
 
         visibilityView.setOnLongClickListener {
-            onHaptic(it)
+            KeyFeedback.trigger(it, isHeavy = false)
             val curIdx = PALETTE.indexOf(item.color)
             val nextIdx = if (curIdx >= 0) (curIdx + 1) % PALETTE.size else 0
             item.color = PALETTE[nextIdx]
@@ -230,8 +223,7 @@ class GraphModeManager(
             }
         })
 
-        removeBtn.setOnClickListener {
-            onHaptic(it)
+        removeBtn.bindCrispKey(isHeavy = true) {
             removeSeries(item)
         }
 
@@ -359,13 +351,11 @@ class GraphModeManager(
     }
 
     private fun setupTabs() {
-        tabGraphPlot.setOnClickListener {
-            onHaptic(it)
+        tabGraphPlot.bindCrispKey(isHeavy = false) {
             selectTab(isPlotTab = true)
         }
 
-        tabGraphTable.setOnClickListener {
-            onHaptic(it)
+        tabGraphTable.bindCrispKey(isHeavy = false) {
             selectTab(isPlotTab = false)
         }
     }
@@ -396,13 +386,11 @@ class GraphModeManager(
     }
 
     private fun setupZoomControls() {
-        btnGraphZoomIn.setOnClickListener {
-            onHaptic(it)
+        btnGraphZoomIn.bindCrispKey(isHeavy = false) {
             graphView.zoomIn()
         }
 
-        btnGraphZoomOut.setOnClickListener {
-            onHaptic(it)
+        btnGraphZoomOut.bindCrispKey(isHeavy = false) {
             graphView.zoomOut()
         }
     }
@@ -444,24 +432,20 @@ class GraphModeManager(
         )
 
         keyMap.forEach { (resId, text) ->
-            rootLayout.findViewById<View>(resId)?.setOnClickListener { v ->
-                onHaptic(v)
+            rootLayout.findViewById<View>(resId)?.bindCrispKey(isHeavy = false) {
                 insertText(text)
             }
         }
 
-        rootLayout.findViewById<View>(R.id.btnGraphKeyDel)?.setOnClickListener { v ->
-            onHaptic(v)
+        rootLayout.findViewById<View>(R.id.btnGraphKeyDel)?.bindCrispKey(isHeavy = true) {
             deleteChar()
         }
 
-        rootLayout.findViewById<View>(R.id.btnGraphKeyAC)?.setOnClickListener { v ->
-            onHaptic(v)
+        rootLayout.findViewById<View>(R.id.btnGraphKeyAC)?.bindCrispKey(isHeavy = true) {
             clearActiveField()
         }
 
-        rootLayout.findViewById<View>(R.id.btnGraphKeypadPlot)?.setOnClickListener { v ->
-            onHaptic(v)
+        rootLayout.findViewById<View>(R.id.btnGraphKeypadPlot)?.bindCrispKey(isHeavy = true) {
             if (containerGraphTable.visibility == View.VISIBLE) {
                 rebuildTable()
             } else {

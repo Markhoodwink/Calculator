@@ -21,27 +21,27 @@ class CasEngine {
 
     companion object {
         val PHYSICAL_CONSTANTS: Map<String, Double> = mapOf(
-            "Nₐ" to 6.02214076e23,
-            "Na" to 6.02214076e23,
-            "c" to 299792458.0,
-            "h" to 6.62607015e-34,
-            "g" to 9.80665,
-            "G" to 6.6743e-11,
-            "k" to 1.380649e-23,
-            "k_B" to 1.380649e-23,
-            "kB" to 1.380649e-23,
-            "R" to 8.314462618,
-            "ε₀" to 8.8541878128e-12,
-            "e₀" to 8.8541878128e-12,
-            "eps0" to 8.8541878128e-12,
-            "μ₀" to 1.25663706212e-6,
-            "mu0" to 1.25663706212e-6,
-            "qₑ" to 1.602176634e-19,
-            "qe" to 1.602176634e-19,
-            "mₑ" to 9.1093837e-31,
-            "me" to 9.1093837e-31,
-            "mₚ" to 1.67262192e-27,
-            "mp" to 1.67262192e-27,
+            "Nₐ" to 6e23,
+            "Na" to 6e23,
+            "c" to 3e8,
+            "h" to 6.6e-34,
+            "g" to 10.0,
+            "G" to 6.7e-11,
+            "k" to 9e9,
+            "k_B" to 1.38e-23,
+            "kB" to 1.38e-23,
+            "R" to 8.31,
+            "ε₀" to 8.85e-12,
+            "e₀" to 8.85e-12,
+            "eps0" to 8.85e-12,
+            "μ₀" to 1.26e-6,
+            "mu0" to 1.26e-6,
+            "qₑ" to 1.6e-19,
+            "qe" to 1.6e-19,
+            "mₑ" to 9.1e-31,
+            "me" to 9.1e-31,
+            "mₚ" to 1.67e-27,
+            "mp" to 1.67e-27,
             "e" to Math.E,
             "π" to Math.PI,
             "pi" to Math.PI
@@ -103,7 +103,7 @@ class CasEngine {
                 if (d.isNaN()) return "NaN"
                 if (d.isInfinite()) return if (d > 0) "+∞" else "-∞"
                 val absD = abs(d)
-                if (absD < 1e-15) return "0"
+                if (absD == 0.0 || absD < 1e-300) return "0"
 
                 return if (absD >= 1e10 || absD < 1e-3) {
                     var exp = floor(log10(absD)).toInt()
@@ -173,9 +173,9 @@ class CasEngine {
 
             fun fromDouble(d: Double): Fraction {
                 if (d.isNaN() || d.isInfinite()) return Fraction(0, 1)
-                if (abs(d) < 1e-15) return Fraction(0, 1)
+                if (abs(d) == 0.0 || abs(d) < 1e-300) return Fraction(0, 1)
                 val rounded = d.roundToLong()
-                if (abs(d - rounded) < 1e-11) return Fraction(rounded, 1L)
+                if (rounded != 0L && abs(d - rounded) < 1e-11) return Fraction(rounded, 1L)
 
                 // 1. Попытка через BigDecimal (для точных степеней 10 вроде 5e-9)
                 try {
@@ -252,6 +252,12 @@ class CasEngine {
             override fun containsVar(name: String) = false
             override fun precedence() = 4
             override fun toExprString() = value.toString()
+        }
+
+        data class Approx(val value: Double) : Node() {
+            override fun containsVar(name: String) = false
+            override fun precedence() = 4
+            override fun toExprString() = Fraction.formatDoubleNorm1(value)
         }
 
         data class Variable(val name: String) : Node() {
@@ -345,6 +351,47 @@ class CasEngine {
             override fun precedence() = 4
             override fun toExprString() = "$fn(${arg.toExprString()})"
         }
+
+        data class Comb(val isPerm: Boolean, val n: Node, val k: Node) : Node() {
+            override fun containsVar(name: String) = n.containsVar(name) || k.containsVar(name)
+            override fun precedence() = 4
+            override fun toExprString(): String {
+                val fn = if (isPerm) "A" else "C"
+                return "$fn(${n.toExprString()}, ${k.toExprString()})"
+            }
+        }
+    }
+
+    fun evalCombinatorics(isPerm: Boolean, n: Long, k: Long): Node {
+        if (n < 0L || k < 0L) {
+            throw ArithmeticException("Индексы должны быть целыми неотрицательными числами")
+        }
+        if (k > n) {
+            throw ArithmeticException("Верхний индекс k не может быть больше нижнего n")
+        }
+        val bigN = BigInteger.valueOf(n)
+
+        val res: BigInteger = if (isPerm) {
+            var acc = BigInteger.ONE
+            for (i in 0L until k) {
+                acc = acc * (bigN - BigInteger.valueOf(i))
+            }
+            acc
+        } else {
+            var acc = BigInteger.ONE
+            val r = minOf(k, n - k)
+            for (i in 0L until r) {
+                acc = acc * (bigN - BigInteger.valueOf(i)) / BigInteger.valueOf(i + 1L)
+            }
+            acc
+        }
+
+        val maxLong = BigInteger.valueOf(Long.MAX_VALUE)
+        return if (res <= maxLong) {
+            Node.Num(Fraction(res.longValueExact()))
+        } else {
+            Node.Approx(res.toDouble())
+        }
     }
 
     // --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ УПРОЩЕНИЯ ---
@@ -355,9 +402,18 @@ class CasEngine {
     private fun negateNode(n: Node): Node {
         return when (n) {
             is Node.Num -> Node.Num(n.value.negate())
+            is Node.Approx -> Node.Approx(-n.value)
             is Node.Sub -> if (isZero(n.l)) n.r else Node.Sub(n.r, n.l)
-            is Node.Mul -> if (n.l is Node.Num) Node.Mul(Node.Num(n.l.value.negate()), n.r) else Node.Sub(Node.Num(Fraction(0)), n)
+            is Node.Mul -> if (n.l is Node.Num) Node.Mul(Node.Num(n.l.value.negate()), n.r) else if (n.l is Node.Approx) Node.Mul(Node.Approx(-n.l.value), n.r) else Node.Sub(Node.Num(Fraction(0)), n)
             else -> Node.Sub(Node.Num(Fraction(0)), n)
+        }
+    }
+
+    private fun getDoubleValue(n: Node): Double? {
+        return when (n) {
+            is Node.Num -> n.value.toDouble()
+            is Node.Approx -> n.value
+            else -> null
         }
     }
 
@@ -472,6 +528,7 @@ class CasEngine {
     fun simplify(node: Node): Node {
         return when (node) {
             is Node.Num -> node
+            is Node.Approx -> node
             is Node.Variable -> {
                 val constVal = if (node.name == "π" || node.name == "pi" || node.name.equals("e", ignoreCase = true)) null else getConstantValue(node.name)
                 if (constVal != null) {
@@ -485,8 +542,28 @@ class CasEngine {
             is Node.Add -> {
                 val l = simplify(node.l)
                 val r = simplify(node.r)
+                if (l is Node.Approx || r is Node.Approx) {
+                    val lVal = getDoubleValue(l)
+                    val rVal = getDoubleValue(r)
+                    if (lVal != null && rVal != null) {
+                        return Node.Approx(lVal + rVal)
+                    }
+                }
                 when {
-                    l is Node.Num && r is Node.Num -> Node.Num(l.value + r.value)
+                    l is Node.Num && r is Node.Num -> {
+                        val d = l.value.toDouble() + r.value.toDouble()
+                        if (abs(d) >= 9e15) Node.Approx(d)
+                        else {
+                            try {
+                                val sumFrac = l.value + r.value
+                                if (abs(sumFrac.num) >= 9_000_000_000_000_000L || abs(sumFrac.den) >= 9_000_000_000_000_000L) {
+                                    Node.Approx(sumFrac.toDouble())
+                                } else Node.Num(sumFrac)
+                            } catch (_: Exception) {
+                                Node.Approx(d)
+                            }
+                        }
+                    }
                     isZero(l) -> r
                     isZero(r) -> l
                     l.toExprString() == r.toExprString() -> simplify(Node.Mul(Node.Num(Fraction(2)), l))
@@ -496,8 +573,28 @@ class CasEngine {
             is Node.Sub -> {
                 val l = simplify(node.l)
                 val r = simplify(node.r)
+                if (l is Node.Approx || r is Node.Approx) {
+                    val lVal = getDoubleValue(l)
+                    val rVal = getDoubleValue(r)
+                    if (lVal != null && rVal != null) {
+                        return Node.Approx(lVal - rVal)
+                    }
+                }
                 when {
-                    l is Node.Num && r is Node.Num -> Node.Num(l.value - r.value)
+                    l is Node.Num && r is Node.Num -> {
+                        val d = l.value.toDouble() - r.value.toDouble()
+                        if (abs(d) >= 9e15) Node.Approx(d)
+                        else {
+                            try {
+                                val diffFrac = l.value - r.value
+                                if (abs(diffFrac.num) >= 9_000_000_000_000_000L || abs(diffFrac.den) >= 9_000_000_000_000_000L) {
+                                    Node.Approx(diffFrac.toDouble())
+                                } else Node.Num(diffFrac)
+                            } catch (_: Exception) {
+                                Node.Approx(d)
+                            }
+                        }
+                    }
                     isZero(r) -> l
                     l.toExprString() == r.toExprString() -> Node.Num(Fraction(0))
                     r is Node.Num && r.value.num < 0 -> simplify(Node.Add(l, Node.Num(r.value.negate())))
@@ -507,6 +604,14 @@ class CasEngine {
             is Node.Mul -> {
                 val l = simplify(node.l)
                 val r = simplify(node.r)
+
+                if (l is Node.Approx || r is Node.Approx) {
+                    val lVal = getDoubleValue(l)
+                    val rVal = getDoubleValue(r)
+                    if (lVal != null && rVal != null) {
+                        return Node.Approx(lVal * rVal)
+                    }
+                }
 
                 // sqrt(x) * sqrt(x) -> x
                 val lInner = sqrtInner(l)
@@ -525,7 +630,20 @@ class CasEngine {
                 }
 
                 when {
-                    l is Node.Num && r is Node.Num -> Node.Num(l.value * r.value)
+                    l is Node.Num && r is Node.Num -> {
+                        val d = l.value.toDouble() * r.value.toDouble()
+                        if (abs(d) >= 9e15) Node.Approx(d)
+                        else {
+                            try {
+                                val prodFrac = l.value * r.value
+                                if (abs(prodFrac.num) >= 9_000_000_000_000_000L || abs(prodFrac.den) >= 9_000_000_000_000_000L) {
+                                    Node.Approx(prodFrac.toDouble())
+                                } else Node.Num(prodFrac)
+                            } catch (_: Exception) {
+                                Node.Approx(d)
+                            }
+                        }
+                    }
                     isZero(l) || isZero(r) -> Node.Num(Fraction(0))
                     isOne(l) -> r
                     isOne(r) -> l
@@ -543,6 +661,15 @@ class CasEngine {
                 var l = simplify(node.l)
                 var r = simplify(node.r)
 
+                if (l is Node.Approx || r is Node.Approx) {
+                    val lVal = getDoubleValue(l)
+                    val rVal = getDoubleValue(r)
+                    if (lVal != null && rVal != null) {
+                        if (rVal == 0.0) throw ArithmeticException("Деление на ноль")
+                        return Node.Approx(lVal / rVal)
+                    }
+                }
+
                 if (r is Node.Num && r.value.num < 0) {
                     l = negateNode(l)
                     r = Node.Num(r.value.negate())
@@ -553,7 +680,20 @@ class CasEngine {
 
                 when {
                     isZero(r) -> throw ArithmeticException("Деление на ноль")
-                    l is Node.Num && r is Node.Num -> Node.Num(l.value / r.value)
+                    l is Node.Num && r is Node.Num -> {
+                        val d = l.value.toDouble() / r.value.toDouble()
+                        if (abs(d) >= 9e15) Node.Approx(d)
+                        else {
+                            try {
+                                val divFrac = l.value / r.value
+                                if (abs(divFrac.num) >= 9_000_000_000_000_000L || abs(divFrac.den) >= 9_000_000_000_000_000L) {
+                                    Node.Approx(divFrac.toDouble())
+                                } else Node.Num(divFrac)
+                            } catch (_: Exception) {
+                                Node.Approx(d)
+                            }
+                        }
+                    }
                     isZero(l) -> Node.Num(Fraction(0))
                     isOne(r) -> l
                     isMinusOne(r) -> simplify(negateNode(l))
@@ -577,10 +717,38 @@ class CasEngine {
                 val b = simplify(node.base)
                 val e = simplify(node.exp)
 
+                // Distribute integer exponent over products, quotients, and sqrts
+                if (e is Node.Num && e.value.den == 1L && abs(e.value.num) in 1L..12L) {
+                    val p = e.value.num
+                    if (b is Node.Mul) {
+                        return simplify(Node.Mul(Node.Pow(b.l, e), Node.Pow(b.r, e)))
+                    }
+                    if (b is Node.Div) {
+                        return simplify(Node.Div(Node.Pow(b.l, e), Node.Pow(b.r, e)))
+                    }
+                    if (b is Node.Sqrt && p % 2L == 0L) {
+                        return simplify(Node.Pow(b.inner, Node.Num(Fraction(p / 2L))))
+                    }
+                    if (b is Node.Sub && isZero(b.l)) {
+                        val innerPow = simplify(Node.Pow(b.r, e))
+                        return if (p % 2L == 0L) innerPow else simplify(negateNode(innerPow))
+                    }
+                }
+
                 // sqrt(x)^2 -> x
                 if (e is Node.Num && e.value.num == 2L && e.value.den == 1L) {
                     val inner = sqrtInner(b)
                     if (inner != null) return simplify(inner)
+                }
+
+                if (b is Node.Approx || e is Node.Approx) {
+                    val bVal = getDoubleValue(b)
+                    val eVal = getDoubleValue(e)
+                    if (bVal != null && eVal != null) {
+                        val d = bVal.pow(eVal)
+                        if (d.isNaN() || d.isInfinite()) throw ArithmeticException("Математическая ошибка при возведении в степень")
+                        return Node.Approx(d)
+                    }
                 }
 
                 if (b is Node.Num && e is Node.Num) {
@@ -590,16 +758,25 @@ class CasEngine {
                     if (den == 1L && abs(p) in 1..15) {
                         try {
                             var res = Fraction(1)
+                            var overflowed = false
                             for (i in 0 until abs(p)) {
-                                if (b.value.num != 0L && abs(res.num) > Long.MAX_VALUE / abs(b.value.num)) throw ArithmeticException("Overflow")
-                                if (b.value.den != 0L && abs(res.den) > Long.MAX_VALUE / abs(b.value.den)) throw ArithmeticException("Overflow")
+                                if (b.value.num != 0L && abs(res.num) > Long.MAX_VALUE / abs(b.value.num)) { overflowed = true; break }
+                                if (b.value.den != 0L && abs(res.den) > Long.MAX_VALUE / abs(b.value.den)) { overflowed = true; break }
                                 res = (res * b.value).simplify()
                             }
-                            return if (p > 0) Node.Num(res) else Node.Num(Fraction(1) / res)
+                            if (!overflowed) {
+                                val finalFrac = if (p > 0) res else Fraction(1) / res
+                                val d = finalFrac.toDouble()
+                                if (abs(d) >= 9e15 || abs(finalFrac.num) >= 9_000_000_000_000_000L || abs(finalFrac.den) >= 9_000_000_000_000_000L) {
+                                    return Node.Approx(d)
+                                }
+                                return Node.Num(finalFrac)
+                            }
                         } catch (_: Exception) {}
                     }
                     val d = b.value.toDouble().pow(e.value.toDouble())
                     if (!d.isNaN() && !d.isInfinite()) {
+                        if (abs(d) >= 9e15) return Node.Approx(d)
                         return Node.Num(Fraction.fromDouble(d))
                     }
                 }
@@ -611,6 +788,11 @@ class CasEngine {
             }
             is Node.Sqrt -> {
                 val inner = simplify(node.inner)
+                if (inner is Node.Approx) {
+                    if (inner.value < 0) throw ArithmeticException("Корень из отрицательного числа")
+                    val d = sqrt(inner.value)
+                    return if (abs(d) >= 9e15) Node.Approx(d) else Node.Num(Fraction.fromDouble(d))
+                }
                 if (inner is Node.Num && inner.value.toDouble() < 0) {
                     throw ArithmeticException("Корень из отрицательного числа")
                 }
@@ -634,12 +816,35 @@ class CasEngine {
             }
             is Node.Func -> {
                 val arg = simplify(node.arg)
-                if (arg is Node.Num) {
-                    if (node.fn == "cbrt") {
+                val argVal: Double? = when (arg) {
+                    is Node.Num -> arg.value.toDouble()
+                    is Node.Approx -> arg.value
+                    else -> null
+                }
+                if (argVal != null) {
+                    if (node.fn == "fact") {
+                        if (abs(argVal - round(argVal)) < 1e-9) {
+                            val n = round(argVal).toInt()
+                            if (n < 0) throw ArithmeticException("Факториал отрицательного числа не определён")
+                            if (n > 170) throw ArithmeticException("Переполнение факториала")
+                            if (n <= 20) {
+                                var r = 1L
+                                for (i in 2..n) r *= i
+                                return Node.Num(Fraction(r))
+                            } else {
+                                var r = 1.0
+                                for (i in 2..n) r *= i.toDouble()
+                                return Node.Approx(r)
+                            }
+                        } else {
+                            throw ArithmeticException("Факториал определён только для целых чисел")
+                        }
+                    }
+                    if (arg is Node.Num && node.fn == "cbrt") {
                         val exact = exactCbrtFraction(arg.value)
                         if (exact != null) return Node.Num(exact)
                     }
-                    val x = arg.value.toDouble()
+                    val x = argVal
 
                     if ((node.fn == "ln" || node.fn == "log") && x <= 0) {
                         throw ArithmeticException(
@@ -676,7 +881,6 @@ class CasEngine {
                         "atan" -> if (isDegreeMode) Math.toDegrees(atan(x)) else atan(x)
                         "log" -> log10(x)
                         "ln" -> ln(x)
-                        "fact" -> factorial(x.roundToInt())
                         "cbrt" -> cbrt(x)
                         else -> Double.NaN
                     }
@@ -687,19 +891,34 @@ class CasEngine {
                     if (res.isInfinite()) {
                         throw ArithmeticException("Результат ${node.fn}($x) = ${if (res > 0) "+∞" else "-∞"}")
                     }
+                    if (abs(res) >= 9e15 || arg is Node.Approx) return Node.Approx(res)
                     return Node.Num(Fraction.fromDouble(res))
                 }
                 Node.Func(node.fn, arg)
             }
+            is Node.Comb -> {
+                val sN = simplify(node.n)
+                val sK = simplify(node.k)
+                if (sN is Node.Num && sK is Node.Num) {
+                    if (sN.value.den != 1L || sK.value.den != 1L) {
+                        throw ArithmeticException("Индексы должны быть целыми неотрицательными числами")
+                    }
+                    evalCombinatorics(node.isPerm, sN.value.num, sK.value.num)
+                } else if (sN is Node.Approx || sK is Node.Approx) {
+                    val nD = getDoubleValue(sN) ?: throw ArithmeticException("Индексы должны быть целыми неотрицательными числами")
+                    val kD = getDoubleValue(sK) ?: throw ArithmeticException("Индексы должны быть целыми неотрицательными числами")
+                    if (nD < 0.0 || kD < 0.0 || nD % 1.0 != 0.0 || kD % 1.0 != 0.0) {
+                        throw ArithmeticException("Индексы должны быть целыми неотрицательными числами")
+                    }
+                    if (kD > nD) {
+                        throw ArithmeticException("Верхний индекс k не может быть больше нижнего n")
+                    }
+                    evalCombinatorics(node.isPerm, nD.toLong(), kD.toLong())
+                } else {
+                    Node.Comb(node.isPerm, sN, sK)
+                }
+            }
         }
-    }
-
-    private fun factorial(n: Int): Double {
-        if (n < 0) return Double.NaN
-        if (n == 0 || n == 1) return 1.0
-        var r = 1.0
-        for (i in 2..min(n, 20)) r *= i
-        return r
     }
 
     // --- ПАРСЕР ВЫРАЖЕНИЙ ---
@@ -738,7 +957,7 @@ class CasEngine {
                 .replace("∛", "cbrt")
 
             val reservedWords = listOf(
-                "asin", "acos", "atan", "cbrt", "sqrt", "fact", "sin", "cos", "tan", "log", "ln", "abs",
+                "comb", "perm", "asin", "acos", "atan", "cbrt", "sqrt", "fact", "sin", "cos", "tan", "log", "ln", "abs",
                 "eps0", "mu0", "k_B", "kB", "Nₐ", "Na", "e₀", "ε₀", "μ₀",
                 "mₑ", "me", "mₚ", "mp", "qₑ", "qe", "pi"
             )
@@ -941,6 +1160,18 @@ class CasEngine {
                     if (pos < src.length && src[pos] == ')') pos++
                     return if (name == "sqrt") Node.Sqrt(arg) else Node.Func(name, arg)
                 }
+                if ((name == "comb" || name == "perm") && pos < src.length && src[pos] == '(') {
+                    pos++
+                    val arg1 = parseAddSub()
+                    if (pos < src.length && src[pos] == ',') {
+                        pos++
+                    } else {
+                        throw IllegalArgumentException("Ожидалась запятая ',' в $name(n, k)")
+                    }
+                    val arg2 = parseAddSub()
+                    if (pos < src.length && src[pos] == ')') pos++
+                    return Node.Comb(isPerm = (name == "perm"), n = arg1, k = arg2)
+                }
                 return Node.Variable(name)
             }
             throw IllegalArgumentException("Неожиданный символ '${src[pos]}'")
@@ -981,8 +1212,8 @@ class CasEngine {
         }
     }
 
-    // --- ПОЛИНОМИАЛЬНОЕ РАЗЛОЖЕНИЕ (до степени 3) ---
-    private fun mulPoly(pl: Map<Int, Node>?, pr: Map<Int, Node>?, maxDeg: Int = 2): Map<Int, Node>? {
+    // --- ПОЛИНОМИАЛЬНОЕ РАЗЛОЖЕНИЕ (до степени 4) ---
+    private fun mulPoly(pl: Map<Int, Node>?, pr: Map<Int, Node>?, maxDeg: Int = 4): Map<Int, Node>? {
         if (pl == null || pr == null) return null
         val res = mutableMapOf<Int, Node>()
         for ((kl, vl) in pl) {
@@ -996,7 +1227,7 @@ class CasEngine {
         return res
     }
 
-    private fun toPolynomial(rawNode: Node, target: String, maxDeg: Int = 3): Map<Int, Node>? {
+    private fun toPolynomial(rawNode: Node, target: String, maxDeg: Int = 4): Map<Int, Node>? {
         val node = simplify(rawNode)
         if (!node.containsVar(target)) return mapOf(0 to node)
         return when (node) {
@@ -1039,12 +1270,93 @@ class CasEngine {
                             val sq = mulPoly(pb, pb, maxDeg) ?: return null
                             mulPoly(sq, pb, maxDeg)
                         }
+                        4L -> {
+                            val pb = toPolynomial(node.base, target, maxDeg) ?: return null
+                            val sq = mulPoly(pb, pb, maxDeg) ?: return null
+                            mulPoly(sq, sq, maxDeg)
+                        }
                         else -> null
                     }
                 } else null
             }
             else -> null
         }
+    }
+
+    private fun exactNthRoot(f: Fraction, n: Long): Fraction? {
+        if (n <= 0L) return null
+        val s = f.simplify()
+        if (s.num < 0L) return null
+        if (s.num == 0L) return Fraction(0L)
+        val numD = s.num.toDouble().pow(1.0 / n).roundToLong()
+        val denD = s.den.toDouble().pow(1.0 / n).roundToLong()
+        if (numD <= 0L || denD <= 0L) return null
+        return try {
+            val pNum = BigInteger.valueOf(numD).pow(n.toInt())
+            val pDen = BigInteger.valueOf(denD).pow(n.toInt())
+            if (pNum == BigInteger.valueOf(s.num) && pDen == BigInteger.valueOf(s.den)) {
+                Fraction(numD, denD)
+            } else null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun extractExclusions(leftAst: Node, rightAst: Node, dl: Node, dr: Node, target: String): List<String> {
+        val excl = mutableSetOf<String>()
+
+        fun processDen(node: Node) {
+            if (!node.containsVar(target)) return
+            val poly = toPolynomial(node, target, maxDeg = 2)
+            if (poly != null) {
+                val a = simplify(poly[2] ?: Node.Num(Fraction(0)))
+                val b = simplify(poly[1] ?: Node.Num(Fraction(0)))
+                val c = simplify(poly[0] ?: Node.Num(Fraction(0)))
+                if (isZero(a) && !isZero(b)) {
+                    val root = simplify(Node.Div(negateNode(c), b))
+                    excl.add("$target ≠ ${root.toExprString()}")
+                } else if (!isZero(a)) {
+                    if (a is Node.Num && b is Node.Num && c is Node.Num) {
+                        val aD = a.value.toDouble()
+                        val bD = b.value.toDouble()
+                        val cD = c.value.toDouble()
+                        val D = bD * bD - 4.0 * aD * cD
+                        if (D >= 0) {
+                            val r1 = (-bD - sqrt(D)) / (2.0 * aD)
+                            val r2 = (-bD + sqrt(D)) / (2.0 * aD)
+                            excl.add("$target ≠ ${formatRoot(r1)}")
+                            if (abs(r1 - r2) > 1e-9) {
+                                excl.add("$target ≠ ${formatRoot(r2)}")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        fun collect(n: Node) {
+            when (n) {
+                is Node.Div -> {
+                    processDen(n.r)
+                    collect(n.l)
+                    collect(n.r)
+                }
+                is Node.Add -> { collect(n.l); collect(n.r) }
+                is Node.Sub -> { collect(n.l); collect(n.r) }
+                is Node.Mul -> { collect(n.l); collect(n.r) }
+                is Node.Pow -> { collect(n.base); collect(n.exp) }
+                is Node.Sqrt -> collect(n.inner)
+                is Node.Func -> collect(n.arg)
+                else -> {}
+            }
+        }
+
+        collect(leftAst)
+        collect(rightAst)
+        processDen(dl)
+        processDen(dr)
+
+        return excl.toList()
     }
 
     data class SolveResult(
@@ -1059,12 +1371,28 @@ class CasEngine {
         val steps = mutableListOf<CasStep>()
         val odzItems = mutableListOf<String>()
 
+        fun processDen(node: Node) {
+            if (!node.containsVar(target)) return
+            val dStr = node.toExprString()
+            val poly = toPolynomial(node, target, maxDeg = 2)
+            if (poly != null) {
+                val a = simplify(poly[2] ?: Node.Num(Fraction(0)))
+                val b = simplify(poly[1] ?: Node.Num(Fraction(0)))
+                val c = simplify(poly[0] ?: Node.Num(Fraction(0)))
+                if (isZero(a) && !isZero(b)) {
+                    val root = simplify(Node.Div(negateNode(c), b))
+                    odzItems.add("$dStr ≠ 0  ⇒  $target ≠ ${root.toExprString()}")
+                    return
+                }
+            }
+            odzItems.add("$dStr ≠ 0")
+        }
+
         fun collectDenominators(node: Node) {
             when (node) {
                 is Node.Div -> {
                     if (node.r.containsVar(target)) {
-                        val dStr = node.r.toExprString()
-                        odzItems.add("$dStr ≠ 0")
+                        processDen(node.r)
                     }
                     collectDenominators(node.l)
                     collectDenominators(node.r)
@@ -1153,6 +1481,53 @@ class CasEngine {
             )
         }
 
+        val combNodes = mutableListOf<Node.Comb>()
+        fun findComb(n: Node) {
+            if (n is Node.Comb) combNodes.add(n)
+            when (n) {
+                is Node.Add -> { findComb(n.l); findComb(n.r) }
+                is Node.Sub -> { findComb(n.l); findComb(n.r) }
+                is Node.Mul -> { findComb(n.l); findComb(n.r) }
+                is Node.Div -> { findComb(n.l); findComb(n.r) }
+                is Node.Pow -> { findComb(n.base); findComb(n.exp) }
+                is Node.Sqrt -> findComb(n.inner)
+                is Node.Func -> findComb(n.arg)
+                is Node.Comb -> { findComb(n.n); findComb(n.k) }
+                else -> {}
+            }
+        }
+        findComb(ast)
+
+        for (combNode in combNodes) {
+            val sN = simplify(combNode.n)
+            val sK = simplify(combNode.k)
+            if (sN is Node.Num && sK is Node.Num && sN.value.den == 1L && sK.value.den == 1L) {
+                val nVal = sN.value.num
+                val kVal = sK.value.num
+                if (nVal >= 0L && kVal >= 0L && kVal <= nVal) {
+                    val symbol = if (combNode.isPerm) "A" else "C"
+                    val nameStr = if (combNode.isPerm) "размещений" else "сочетаний"
+                    val formulaTemplate = if (combNode.isPerm) "${symbol}_n^k = n! / (n - k)!" else "${symbol}_n^k = n! / (k! · (n - k)!)"
+                    val diffNK = nVal - kVal
+                    val subFormula = if (combNode.isPerm) {
+                        "${symbol}_${nVal}^${kVal} = ${nVal}! / (${nVal} - ${kVal})! = ${nVal}! / ${diffNK}!"
+                    } else {
+                        "${symbol}_${nVal}^${kVal} = ${nVal}! / (${kVal}! · (${nVal} - ${kVal})!) = ${nVal}! / (${kVal}! · ${diffNK}!)"
+                    }
+                    val resNode = evalCombinatorics(combNode.isPerm, nVal, kVal)
+                    val ansStr = resNode.toExprString()
+                    steps.add(
+                        CasStep(
+                            badge = "Шаг ${steps.size}",
+                            title = "Вычисляем число $nameStr ${symbol}_${nVal}^${kVal}",
+                            formula = "$subFormula = $ansStr",
+                            explanation = "Применяем формулу: $formulaTemplate. Подставляем n = $nVal, k = $kVal."
+                        )
+                    )
+                }
+            }
+        }
+
         if (simplified is Node.Num) {
             val simpleStr = simplified.toExprString()
             if (steps.size == 2) {
@@ -1165,7 +1540,8 @@ class CasEngine {
                     )
                 )
             } else if (trimmed.contains('^') || trimmed.contains("sqrt") || trimmed.contains("cbrt") ||
-                trimmed.contains("sin") || trimmed.contains("cos") || trimmed.contains("tan")
+                trimmed.contains("sin") || trimmed.contains("cos") || trimmed.contains("tan") ||
+                trimmed.contains("comb") || trimmed.contains("perm")
             ) {
                 steps.add(
                     CasStep(
@@ -1223,7 +1599,7 @@ class CasEngine {
         return steps
     }
 
-    fun evaluateFull(expression: String): SolveResult {
+    fun evaluateFull(expression: String, includeSteps: Boolean = true): SolveResult {
         return try {
             val trimmed = expression.trim()
             if (trimmed.isEmpty()) return SolveResult("0", Node.Num(Fraction(0)), emptyList(), Fraction(0))
@@ -1237,10 +1613,10 @@ class CasEngine {
             if (trimmed.matches(singleNumberRegex)) {
                 val frac = Fraction.fromDecimalString(trimmed)
                 lastAnswer = trimmed
-                val stepList = listOf(
+                val stepList = if (includeSteps) listOf(
                     CasStep("Условие", "Исходное выражение", trimmed, "Запись числового значения."),
                     CasStep("Ответ", "Записываем ответ", trimmed, "Значение: $trimmed")
-                )
+                ) else emptyList()
                 return SolveResult(
                     displayFormula = trimmed,
                     primaryNode = Node.Num(frac),
@@ -1257,17 +1633,17 @@ class CasEngine {
                     val str = Fraction.formatDoubleNorm1(d)
                     lastAnswer = str
                     val frac = Fraction.fromDouble(d)
-                    val stepList = listOf(
+                    val stepList = if (includeSteps) listOf(
                         CasStep("Условие", "Исходное выражение", trimmed, "Запись выражения с физическими константами."),
                         CasStep("Шаг 1", "Вычисляем физическую константу", "$trimmed = $str", "Подставляем значения физических констант."),
                         CasStep("Ответ", "Записываем ответ", str, "Результат вычислений: $str")
-                    )
+                    ) else emptyList()
                     return SolveResult(str, Node.Num(frac), listOf("Ответ: $str"), frac, detailedSteps = stepList)
                 }
             }
 
             val simplified = simplify(ast)
-            val detailed = generateArithmeticSteps(trimmed, ast, simplified)
+            val detailed = if (includeSteps) generateArithmeticSteps(trimmed, ast, simplified) else emptyList()
 
             if (simplified is Node.Num) {
                 val frac = simplified.value
@@ -1283,6 +1659,10 @@ class CasEngine {
                 }
                 lastAnswer = str
                 SolveResult(str, simplified, listOf("Ответ: $str"), frac, detailedSteps = detailed)
+            } else if (simplified is Node.Approx) {
+                val str = Fraction.formatDoubleNorm1(simplified.value)
+                lastAnswer = str
+                SolveResult(str, simplified, listOf("Ответ: $str"), null, detailedSteps = detailed)
             } else {
                 val str = simplified.toExprString()
                 SolveResult(str, simplified, listOf("Упрощено: $str"), detailedSteps = detailed)
@@ -1338,6 +1718,679 @@ class CasEngine {
         val approx = f.toDouble()
         return if (abs(approx - v) < 1e-9 && f.den < 1000000L) f.toString()
         else Fraction.formatDoubleNorm1(v)
+    }
+
+    private fun formatRootsDisplay(roots: List<Double>, target: String): String {
+        if (roots.isEmpty()) return "Нет решений"
+        if (roots.size == 1) return "$target = ${formatRoot(roots[0])}"
+        val subs = listOf("₁", "₂", "₃", "₄", "₅")
+        return roots.mapIndexed { idx, v ->
+            "$target${subs.getOrElse(idx) { "${idx + 1}" }} = ${formatRoot(v)}"
+        }.joinToString(";  ")
+    }
+
+    private fun formatRootsAnswer(roots: List<Double>, target: String): String {
+        if (roots.isEmpty()) return "Нет решений"
+        if (roots.size == 1) return "$target = ${formatRoot(roots[0])}"
+        val subs = listOf("₁", "₂", "₃", "₄", "₅")
+        return roots.mapIndexed { idx, v ->
+            "$target${subs.getOrElse(idx) { "${idx + 1}" }} = ${formatRoot(v)}"
+        }.joinToString("\n")
+    }
+
+    private fun solveBranching(
+        argNode: Node,
+        rootNode: Node,
+        target: String,
+        detailedSteps: MutableList<CasStep>,
+        titleStr: String
+    ): SolveResult {
+        val stepNum = detailedSteps.count { it.badge.startsWith("Шаг") } + 1
+        val aStr = argNode.toExprString()
+        val rStr = rootNode.toExprString()
+
+        detailedSteps.add(
+            CasStep(
+                badge = "Шаг $stepNum",
+                title = titleStr,
+                formula = "$aStr = $rStr  или  $aStr = -$rStr",
+                explanation = "Раскрываем выражение со знаками плюс и минус."
+            )
+        )
+
+        val res1 = isolateVariableFull("$aStr = $rStr", target)
+        val res2 = isolateVariableFull("$aStr = -($rStr)", target)
+
+        val candRoots = mutableListOf<Double>()
+
+        fun collectRoots(res: SolveResult) {
+            if (res.displayFormula != "Нет решений" && res.displayFormula != "Нет действительных корней") {
+                if (res.primaryNode != null) {
+                    val v = evalNodeAtX(res.primaryNode, 0.0)
+                    if (!v.isNaN()) candRoots.add(v)
+                }
+                val regex = Regex("""[+-]?\d+(\.\d+)?""")
+                for (match in regex.findAll(res.displayFormula)) {
+                    val d = match.value.toDoubleOrNull()
+                    if (d != null) candRoots.add(d)
+                }
+            }
+        }
+
+        collectRoots(res1)
+        collectRoots(res2)
+
+        val sortedRoots = candRoots.distinct().sorted()
+        if (sortedRoots.isEmpty()) {
+            detailedSteps.add(CasStep("Ответ", "Записываем ответ", "Нет действительных корней", "Уравнение не имеет решений."))
+            return SolveResult("Нет действительных корней", null, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
+        }
+
+        val displayStr = formatRootsDisplay(sortedRoots, target)
+        val answerFormula = formatRootsAnswer(sortedRoots, target)
+        detailedSteps.add(CasStep("Ответ", "Записываем ответ", answerFormula, "Записываем найденные корни."))
+        return SolveResult(displayStr, null, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
+    }
+
+    private fun trySolveLogEquation(
+        leftAst: Node,
+        rightAst: Node,
+        masterEq: Node,
+        target: String,
+        detailedSteps: MutableList<CasStep>
+    ): SolveResult? {
+        var logFn: String? = null
+        var argA: Node? = null
+        var argB: Node? = null
+
+        if (leftAst is Node.Func && rightAst is Node.Func &&
+            leftAst.fn == rightAst.fn && (leftAst.fn == "ln" || leftAst.fn == "log")) {
+            logFn = leftAst.fn
+            argA = leftAst.arg
+            argB = rightAst.arg
+        } else {
+            val expr = simplify(masterEq)
+            if (expr is Node.Sub) {
+                val l = expr.l
+                val r = expr.r
+                if (l is Node.Func && r is Node.Func && l.fn == r.fn && (l.fn == "ln" || l.fn == "log")) {
+                    logFn = l.fn
+                    argA = l.arg
+                    argB = r.arg
+                }
+            }
+        }
+
+        if (logFn == null || argA == null || argB == null) return null
+
+        val fnName = if (logFn == "ln") "натурального" else "десятичного"
+        detailedSteps.add(
+            CasStep(
+                badge = "ОДЗ",
+                title = "Находим область допустимых значений",
+                formula = "${argA.toExprString()} > 0;  ${argB.toExprString()} > 0",
+                explanation = "Подлогарифмическое выражение $fnName логарифма должно быть строго больше нуля."
+            )
+        )
+
+        detailedSteps.add(
+            CasStep(
+                badge = "Шаг 1",
+                title = "Потенцируем уравнение",
+                formula = "${argA.toExprString()} = ${argB.toExprString()}",
+                explanation = "Так как основания логарифмов равны, приравниваем подлогарифмические выражения."
+            )
+        )
+
+        val eqAB = simplify(Node.Sub(argA, argB))
+        val poly = toPolynomial(eqAB, target, maxDeg = 4) ?: return null
+
+        val a4 = simplify(poly[4] ?: Node.Num(Fraction(0)))
+        val a3 = simplify(poly[3] ?: Node.Num(Fraction(0)))
+        val a  = simplify(poly[2] ?: Node.Num(Fraction(0)))
+        val b  = simplify(poly[1] ?: Node.Num(Fraction(0)))
+        val c  = simplify(poly[0] ?: Node.Num(Fraction(0)))
+
+        val candRoots = mutableListOf<Double>()
+        if (isZero(a4) && isZero(a3) && !isZero(a)) {
+            if (a is Node.Num && b is Node.Num && c is Node.Num) {
+                val aD = a.value.toDouble()
+                val bD = b.value.toDouble()
+                val cD = c.value.toDouble()
+                val D = bD * bD - 4.0 * aD * cD
+                if (D >= 0) {
+                    val sqrtD = sqrt(max(0.0, D))
+                    candRoots.add((-bD - sqrtD) / (2.0 * aD))
+                    if (D > 1e-9) candRoots.add((-bD + sqrtD) / (2.0 * aD))
+                }
+            }
+        } else if (isZero(a4) && isZero(a3) && isZero(a) && !isZero(b)) {
+            val sol = simplify(Node.Div(negateNode(c), b))
+            val solVal = evalNodeAtX(sol, 0.0)
+            if (!solVal.isNaN()) candRoots.add(solVal)
+        }
+
+        val validRoots = candRoots.distinct().sorted().filter { r ->
+            val vA = evalNodeAtX(argA, r)
+            val vB = evalNodeAtX(argB, r)
+            val isValid = !vA.isNaN() && vA > 1e-9 && !vB.isNaN() && vB > 1e-9
+            if (!isValid) {
+                detailedSteps.add(
+                    CasStep(
+                        badge = "ОДЗ",
+                        title = "Проверка корня по ОДЗ",
+                        formula = "$target = ${formatRoot(r)} — посторонний корень по ОДЗ",
+                        explanation = "При данном значении подлогарифмическое выражение не строго больше нуля."
+                    )
+                )
+            }
+            isValid
+        }
+
+        if (validRoots.isEmpty()) {
+            detailedSteps.add(CasStep("Ответ", "Записываем ответ", "Нет решений", "Все найденные корни являются посторонними по ОДЗ."))
+            return SolveResult("Нет решений", null, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
+        }
+
+        val displayStr = formatRootsDisplay(validRoots, target)
+        val answerFormula = formatRootsAnswer(validRoots, target)
+        detailedSteps.add(CasStep("Ответ", "Записываем ответ", answerFormula, "Записываем корни логарифмического уравнения."))
+        return SolveResult(displayStr, null, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
+    }
+
+    private fun trySolveRadicalEquation(
+        leftAst: Node,
+        rightAst: Node,
+        target: String,
+        detailedSteps: MutableList<CasStep>
+    ): SolveResult? {
+        var radicalInner: Node? = null
+        var rhsNode: Node? = null
+
+        if (leftAst is Node.Sqrt) {
+            radicalInner = leftAst.inner
+            rhsNode = rightAst
+        } else if (leftAst is Node.Func && leftAst.fn == "sqrt") {
+            radicalInner = leftAst.arg
+            rhsNode = rightAst
+        } else if (rightAst is Node.Sqrt) {
+            radicalInner = rightAst.inner
+            rhsNode = leftAst
+        } else if (rightAst is Node.Func && rightAst.fn == "sqrt") {
+            radicalInner = rightAst.arg
+            rhsNode = leftAst
+        }
+
+        if (radicalInner == null || rhsNode == null) return null
+
+        val rVal = evalNodeAtX(rhsNode, 0.0)
+        if (!rhsNode.containsVar(target) && rVal < -1e-9) {
+            detailedSteps.add(CasStep("Шаг 1", "Анализируем квадратный корень", "√(...) = ${formatReadableExpr(rhsNode.toExprString())} < 0", "Арифметический квадратный корень не может быть отрицательным."))
+            detailedSteps.add(CasStep("Ответ", "Записываем ответ", "Нет действительных корней", "Уравнение не имеет решений на множестве действительных чисел."))
+            return SolveResult("Нет действительных корней", null, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
+        }
+
+        detailedSteps.add(
+            CasStep(
+                badge = "ОДЗ",
+                title = "Находим область допустимых значений",
+                formula = "${radicalInner.toExprString()} ≥ 0;  ${formatReadableExpr(rhsNode.toExprString())} ≥ 0",
+                explanation = "Выражение под квадратным корнем и правая часть уравнения должны быть неотрицательными."
+            )
+        )
+
+        detailedSteps.add(
+            CasStep(
+                badge = "Шаг 1",
+                title = "Возводим обе части в квадрат",
+                formula = "${radicalInner.toExprString()} = (${formatReadableExpr(rhsNode.toExprString())})²",
+                explanation = "Возводим обе части уравнения в квадрат для избавления от знака корня."
+            )
+        )
+
+        val sqEq = simplify(Node.Sub(radicalInner, Node.Pow(rhsNode, Node.Num(Fraction(2)))))
+        val poly = toPolynomial(sqEq, target, maxDeg = 4) ?: return null
+
+        val a4 = simplify(poly[4] ?: Node.Num(Fraction(0)))
+        val a3 = simplify(poly[3] ?: Node.Num(Fraction(0)))
+        val a  = simplify(poly[2] ?: Node.Num(Fraction(0)))
+        val b  = simplify(poly[1] ?: Node.Num(Fraction(0)))
+        val c  = simplify(poly[0] ?: Node.Num(Fraction(0)))
+
+        val candRoots = mutableListOf<Double>()
+        if (isZero(a4) && isZero(a3) && !isZero(a)) {
+            if (a is Node.Num && b is Node.Num && c is Node.Num) {
+                val aD = a.value.toDouble()
+                val bD = b.value.toDouble()
+                val cD = c.value.toDouble()
+                val D = bD * bD - 4.0 * aD * cD
+                if (D >= 0) {
+                    val sqrtD = sqrt(max(0.0, D))
+                    candRoots.add((-bD - sqrtD) / (2.0 * aD))
+                    if (D > 1e-9) candRoots.add((-bD + sqrtD) / (2.0 * aD))
+                }
+            }
+        } else if (isZero(a4) && isZero(a3) && isZero(a) && !isZero(b)) {
+            val sol = simplify(Node.Div(negateNode(c), b))
+            val solVal = evalNodeAtX(sol, 0.0)
+            if (!solVal.isNaN()) candRoots.add(solVal)
+        }
+
+        val validRoots = candRoots.distinct().sorted().filter { r ->
+            val vIn = evalNodeAtX(radicalInner, r)
+            val vRhs = evalNodeAtX(rhsNode, r)
+            val vL = evalNodeAtX(leftAst, r)
+            val vR = evalNodeAtX(rightAst, r)
+            val isValid = !vIn.isNaN() && vIn >= -1e-9 && !vRhs.isNaN() && vRhs >= -1e-9 &&
+                    !vL.isNaN() && !vR.isNaN() && abs(vL - vR) < 1e-5
+            if (!isValid) {
+                detailedSteps.add(
+                    CasStep(
+                        badge = "ОДЗ",
+                        title = "Проверка корня по ОДЗ",
+                        formula = "$target = ${formatRoot(r)} — посторонний корень по ОДЗ",
+                        explanation = "При $target = ${formatRoot(r)} правая часть или подкоренное выражение отрицательны, либо исходное равенство не выполняется."
+                    )
+                )
+            }
+            isValid
+        }
+
+        if (validRoots.isEmpty()) {
+            detailedSteps.add(CasStep("Ответ", "Записываем ответ", "Нет решений", "Все найденные корни являются посторонними по ОДЗ."))
+            return SolveResult("Нет решений", null, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
+        }
+
+        val displayStr = formatRootsDisplay(validRoots, target)
+        val answerFormula = formatRootsAnswer(validRoots, target)
+        detailedSteps.add(CasStep("Ответ", "Записываем ответ", answerFormula, "Записываем корни иррационального уравнения."))
+        return SolveResult(displayStr, null, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
+    }
+
+    private fun normalizeBasePower(base: Long): Pair<Long, Long> {
+        if (base <= 1L) return Pair(base, 1L)
+        for (b in 2L..10L) {
+            var pow = b
+            var m = 1L
+            while (pow < base) {
+                pow *= b
+                m++
+            }
+            if (pow == base) {
+                return Pair(b, m)
+            }
+        }
+        return Pair(base, 1L)
+    }
+
+    private fun collectAdditiveTerms(node: Node): List<Pair<Boolean, Node>> {
+        val list = mutableListOf<Pair<Boolean, Node>>()
+        fun walk(n: Node, positive: Boolean) {
+            when (n) {
+                is Node.Add -> { walk(n.l, positive); walk(n.r, positive) }
+                is Node.Sub -> {
+                    if (isZero(n.l)) {
+                        walk(n.r, !positive)
+                    } else {
+                        walk(n.l, positive)
+                        walk(n.r, !positive)
+                    }
+                }
+                else -> if (!isZero(n)) list.add(Pair(positive, n))
+            }
+        }
+        walk(node, true)
+        return list
+    }
+
+    private data class ExpTermInfo(
+        val coeff: Fraction,
+        val base: Long?,
+        val expPoly: Map<Int, Fraction>
+    )
+
+    private fun polyNodeToFracMap(map: Map<Int, Node>): Map<Int, Fraction>? {
+        val res = mutableMapOf<Int, Fraction>()
+        for ((deg, n) in map) {
+            if (n is Node.Num) {
+                res[deg] = n.value
+            } else return null
+        }
+        return res
+    }
+
+    private fun scalePoly(p: Map<Int, Fraction>, factor: Fraction): Map<Int, Fraction> {
+        return p.mapValues { (_, v) -> (v * factor).simplify() }
+    }
+
+    private fun addPolys(p1: Map<Int, Fraction>, p2: Map<Int, Fraction>): Map<Int, Fraction> {
+        val keys = p1.keys + p2.keys
+        val res = mutableMapOf<Int, Fraction>()
+        for (k in keys) {
+            val v = (p1[k] ?: Fraction(0)) + (p2[k] ?: Fraction(0))
+            if (v.num != 0L) res[k] = v
+        }
+        return res
+    }
+
+    private fun subtractPolys(p1: Map<Int, Fraction>, p2: Map<Int, Fraction>): Map<Int, Fraction> {
+        val keys = p1.keys + p2.keys
+        val res = mutableMapOf<Int, Fraction>()
+        for (k in keys) {
+            val v = (p1[k] ?: Fraction(0)) - (p2[k] ?: Fraction(0))
+            if (v.num != 0L) res[k] = v
+        }
+        return res
+    }
+
+    private fun polyEquals(p1: Map<Int, Fraction>, p2: Map<Int, Fraction>): Boolean {
+        val keys = p1.keys + p2.keys
+        return keys.all { k -> (p1[k] ?: Fraction(0)) == (p2[k] ?: Fraction(0)) }
+    }
+
+    private fun polyToNode(p: Map<Int, Fraction>, target: String): Node {
+        if (p.isEmpty()) return Node.Num(Fraction(0))
+        var sum: Node? = null
+        for ((deg, coeff) in p.entries.sortedByDescending { it.key }) {
+            if (coeff.num == 0L) continue
+            val term = when (deg) {
+                0 -> Node.Num(coeff)
+                1 -> if (coeff == Fraction(1)) Node.Variable(target)
+                     else if (coeff == Fraction(-1)) Node.Sub(Node.Num(Fraction(0)), Node.Variable(target))
+                     else Node.Mul(Node.Num(coeff), Node.Variable(target))
+                else -> {
+                    val powNode = Node.Pow(Node.Variable(target), Node.Num(Fraction(deg.toLong())))
+                    if (coeff == Fraction(1)) powNode
+                    else if (coeff == Fraction(-1)) Node.Sub(Node.Num(Fraction(0)), powNode)
+                    else Node.Mul(Node.Num(coeff), powNode)
+                }
+            }
+            sum = if (sum == null) term else Node.Add(sum, term)
+        }
+        return sum ?: Node.Num(Fraction(0))
+    }
+
+    private fun formatPolyExpr(p: Map<Int, Fraction>, target: String): String {
+        return polyToNode(p, target).toExprString()
+    }
+
+    private fun exactLogBase(base: Long, f: Fraction): Node {
+        val s = f.simplify()
+        if (s.num > 0L && s.den == 1L) {
+            var p = 0L
+            var valP = 1L
+            while (valP < s.num && valP < Long.MAX_VALUE / base) {
+                valP *= base
+                p++
+            }
+            if (valP == s.num) return Node.Num(Fraction(p))
+        }
+        if (s.num == 1L && s.den > 0L) {
+            var p = 0L
+            var valP = 1L
+            while (valP < s.den && valP < Long.MAX_VALUE / base) {
+                valP *= base
+                p++
+            }
+            if (valP == s.den) return Node.Num(Fraction(-p))
+        }
+        return Node.Div(Node.Func("ln", Node.Num(s)), Node.Func("ln", Node.Num(Fraction(base))))
+    }
+
+    private fun parseExpTerm(node: Node, target: String): ExpTermInfo? {
+        when (node) {
+            is Node.Num -> return ExpTermInfo(node.value, null, emptyMap())
+            is Node.Pow -> {
+                if (node.base is Node.Num && node.base.value.den == 1L && node.base.value.num > 1L) {
+                    val rawBase = node.base.value.num
+                    val (bMin, m) = normalizeBasePower(rawBase)
+                    val polyNode = toPolynomial(node.exp, target, maxDeg = 2) ?: return null
+                    val poly = polyNodeToFracMap(polyNode) ?: return null
+                    val scaledPoly = scalePoly(poly, Fraction(m))
+                    return ExpTermInfo(Fraction(1), bMin, scaledPoly)
+                }
+            }
+            is Node.Mul -> {
+                var coeff = Fraction(1)
+                var powNode: Node.Pow? = null
+                fun collectMul(n: Node) {
+                    when (n) {
+                        is Node.Num -> coeff = coeff * n.value
+                        is Node.Sub -> if (isZero(n.l)) { coeff = coeff.negate(); collectMul(n.r) }
+                        is Node.Pow -> powNode = n
+                        is Node.Mul -> { collectMul(n.l); collectMul(n.r) }
+                        else -> {}
+                    }
+                }
+                collectMul(node)
+                val pn = powNode
+                if (pn != null) {
+                    val bNode = pn.base
+                    if (bNode is Node.Num && bNode.value.den == 1L && bNode.value.num > 1L) {
+                        val rawBase = bNode.value.num
+                        val (bMin, m) = normalizeBasePower(rawBase)
+                        val polyNode = toPolynomial(pn.exp, target, maxDeg = 2) ?: return null
+                        val poly = polyNodeToFracMap(polyNode) ?: return null
+                        val scaledPoly = scalePoly(poly, Fraction(m))
+                        return ExpTermInfo(coeff, bMin, scaledPoly)
+                    }
+                }
+            }
+            is Node.Sub -> {
+                if (isZero(node.l)) {
+                    val inner = parseExpTerm(node.r, target) ?: return null
+                    return ExpTermInfo(inner.coeff.negate(), inner.base, inner.expPoly)
+                }
+            }
+            else -> {}
+        }
+        return null
+    }
+
+    private fun trySolveExponentialEquation(
+        leftAst: Node,
+        rightAst: Node,
+        target: String,
+        detailedSteps: MutableList<CasStep>
+    ): SolveResult? {
+        val masterEq = simplify(Node.Sub(leftAst, rightAst))
+        val terms = collectAdditiveTerms(masterEq)
+        if (terms.isEmpty()) return null
+
+        val parsedTerms = mutableListOf<ExpTermInfo>()
+        for ((isPos, tNode) in terms) {
+            val parsed = parseExpTerm(tNode, target) ?: return null
+            val finalCoeff = if (isPos) parsed.coeff else parsed.coeff.negate()
+            parsedTerms.add(parsed.copy(coeff = finalCoeff))
+        }
+
+        val nonConstBases = parsedTerms.mapNotNull { it.base }.distinct()
+        if (nonConstBases.size != 1) return null
+        val base = nonConstBases.first()
+        if (base <= 1L) return null
+
+        data class GroupedTerm(val effCoeff: Fraction, val Q: Map<Int, Fraction>)
+
+        val grouped = mutableListOf<GroupedTerm>()
+        for (pt in parsedTerms) {
+            if (pt.base == null) {
+                grouped.add(GroupedTerm(pt.coeff, emptyMap()))
+            } else {
+                val kFrac = pt.expPoly[0] ?: Fraction(0)
+                if (kFrac.den != 1L) return null
+                val k = kFrac.num
+                val qPoly = pt.expPoly.toMutableMap()
+                qPoly.remove(0)
+
+                var basePowK = 1.0
+                if (k >= 0) {
+                    for (i in 0 until k) basePowK *= base.toDouble()
+                } else {
+                    for (i in 0 until -k) basePowK /= base.toDouble()
+                }
+                val basePowKFrac = Fraction.fromDouble(basePowK)
+                val effCoeff = pt.coeff * basePowKFrac
+                grouped.add(GroupedTerm(effCoeff, qPoly))
+            }
+        }
+
+        val combinedMap = mutableMapOf<String, GroupedTerm>()
+        for (gt in grouped) {
+            val key = gt.Q.entries.sortedBy { it.key }.joinToString(",") { "${it.key}:${it.value}" }
+            val prev = combinedMap[key]
+            if (prev != null) {
+                combinedMap[key] = GroupedTerm(prev.effCoeff + gt.effCoeff, gt.Q)
+            } else {
+                combinedMap[key] = gt
+            }
+        }
+        val combined = combinedMap.values.filter { it.effCoeff.num != 0L }
+
+        val baseStr = base.toString()
+
+        if (combined.size == 2) {
+            val t1 = combined[0]
+            val t2 = combined[1]
+
+            val (expTerm, constTerm) = if (t1.Q.isNotEmpty() && t2.Q.isEmpty()) {
+                Pair(t1, t2)
+            } else if (t2.Q.isNotEmpty() && t1.Q.isEmpty()) {
+                Pair(t2, t1)
+            } else {
+                val qDiff = subtractPolys(t1.Q, t2.Q)
+                val rhs = (t2.effCoeff.negate() / t1.effCoeff).simplify()
+                if (rhs.toDouble() <= 0) {
+                    detailedSteps.add(CasStep("Шаг 1", "Анализируем показательное уравнение", "$baseStr^(...) = $rhs ≤ 0", "Показательная функция не может принимать отрицательные или нулевые значения."))
+                    detailedSteps.add(CasStep("Ответ", "Записываем ответ", "Нет действительных корней", "Уравнение не имеет решений."))
+                    return SolveResult("Нет действительных корней", null, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
+                }
+                val targetLog = exactLogBase(base, rhs)
+                detailedSteps.add(CasStep("Шаг 1", "Приводим к общему основанию", "$baseStr^(${formatPolyExpr(qDiff, target)}) = $rhs", "Используем свойства степеней."))
+                val rhsEq = polyToNode(qDiff, target)
+                val finalEq = simplify(Node.Sub(rhsEq, targetLog))
+                return isolateVariableFull("${finalEq.toExprString()} = 0", target)
+            }
+
+            val rhs = (constTerm.effCoeff.negate() / expTerm.effCoeff).simplify()
+            if (rhs.toDouble() <= 0) {
+                detailedSteps.add(CasStep("Шаг 1", "Анализируем показательное уравнение", "$baseStr^(...) = $rhs ≤ 0", "Показательная функция не может принимать отрицательные или нулевые значения."))
+                detailedSteps.add(CasStep("Ответ", "Записываем ответ", "Нет действительных корней", "Уравнение не имеет решений."))
+                return SolveResult("Нет действительных корней", null, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
+            }
+            val targetLog = exactLogBase(base, rhs)
+            val expEq = polyToNode(expTerm.Q, target)
+            val finalEq = simplify(Node.Sub(expEq, targetLog))
+            detailedSteps.add(CasStep("Шаг 1", "Уравниваем показатели степеней", "${expEq.toExprString()} = ${targetLog.toExprString()}", "Так как основания равны, приравниваем показатели."))
+            return isolateVariableFull("${finalEq.toExprString()} = 0", target)
+        }
+
+        if (combined.size == 3) {
+            val perm = listOf(
+                Triple(combined[0], combined[1], combined[2]),
+                Triple(combined[0], combined[2], combined[1]),
+                Triple(combined[1], combined[0], combined[2]),
+                Triple(combined[1], combined[2], combined[0]),
+                Triple(combined[2], combined[0], combined[1]),
+                Triple(combined[2], combined[1], combined[0])
+            )
+
+            var matchedTriple: Triple<GroupedTerm, GroupedTerm, GroupedTerm>? = null
+            var uPoly: Map<Int, Fraction>? = null
+
+            for (p in perm) {
+                val qSum = addPolys(p.first.Q, p.third.Q)
+                val doubleQ2 = scalePoly(p.second.Q, Fraction(2))
+                if (polyEquals(qSum, doubleQ2)) {
+                    val diff = subtractPolys(p.second.Q, p.third.Q)
+                    if (diff.isNotEmpty()) {
+                        matchedTriple = p
+                        uPoly = diff
+                        break
+                    }
+                }
+            }
+
+            if (matchedTriple != null && uPoly != null) {
+                val (t1, t2, t3) = matchedTriple
+                val a1 = t1.effCoeff
+                val a2 = t2.effCoeff
+                val a3 = t3.effCoeff
+
+                val uStr = formatPolyExpr(uPoly, target)
+                val step1Formula = "Пусть t = $baseStr^($uStr) > 0 ⇒ $a1·t² + ($a2)·t + ($a3) = 0"
+                detailedSteps.add(
+                    CasStep(
+                        badge = "Шаг 1",
+                        title = "Замена переменной в показательном уравнении",
+                        formula = step1Formula,
+                        explanation = "Выполняем замену t = $baseStr^($uStr) (где t > 0) и сводим уравнение к квадратному."
+                    )
+                )
+
+                val aD = a1.toDouble()
+                val bD = a2.toDouble()
+                val cD = a3.toDouble()
+                val D = bD * bD - 4.0 * aD * cD
+
+                if (D < -1e-9) {
+                    detailedSteps.add(CasStep("Шаг 2", "Анализируем дискриминант", "D < 0", "Квадратное уравнение для t не имеет решений."))
+                    detailedSteps.add(CasStep("Ответ", "Записываем ответ", "Нет действительных корней", "Уравнение не имеет решений."))
+                    return SolveResult("Нет действительных корней", null, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
+                }
+
+                val sqrtD = sqrt(max(0.0, D))
+                val tVals = listOf((-bD - sqrtD) / (2.0 * aD), (-bD + sqrtD) / (2.0 * aD)).distinct()
+                val validTVals = tVals.filter { it > 1e-9 }
+
+                if (validTVals.isEmpty()) {
+                    detailedSteps.add(CasStep("Шаг 2", "Проверка t > 0", "t ≤ 0 для всех корней", "Все найденные корни t не удовлетворяют условию t > 0."))
+                    detailedSteps.add(CasStep("Ответ", "Записываем ответ", "Нет действительных корней", "Уравнение не имеет решений."))
+                    return SolveResult("Нет действительных корней", null, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
+                }
+
+                val subResults = mutableListOf<SolveResult>()
+                val uNode = polyToNode(uPoly, target)
+
+                for (tVal in validTVals) {
+                    val tFrac = Fraction.fromDouble(tVal)
+                    val logNode = exactLogBase(base, tFrac)
+                    val eqForX = simplify(Node.Sub(uNode, logNode))
+                    val subRes = isolateVariableFull("${eqForX.toExprString()} = 0", target)
+                    if (subRes.displayFormula != "Нет решений" && subRes.displayFormula != "Нет действительных корней") {
+                        subResults.add(subRes)
+                    }
+                }
+
+                if (subResults.isEmpty()) {
+                    detailedSteps.add(CasStep("Ответ", "Записываем ответ", "Нет действительных корней", "Уравнение не имеет решений."))
+                    return SolveResult("Нет действительных корней", null, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
+                }
+
+                val allDisplays = subResults.flatMap { res ->
+                    res.displayFormula.split(";").map { it.trim() }
+                }.filter { it.isNotEmpty() }.distinct()
+
+                val combinedDisplay = if (allDisplays.size == 1) {
+                    allDisplays[0]
+                } else {
+                    val regexVal = Regex("""=\s*(.+)""")
+                    val values = allDisplays.mapNotNull { d ->
+                        regexVal.find(d)?.groupValues?.get(1)?.trim() ?: d
+                    }
+                    val subs = listOf("₁", "₂", "₃", "₄", "₅")
+                    values.mapIndexed { idx, v ->
+                        "$target${subs.getOrElse(idx) { "${idx + 1}" }} = $v"
+                    }.joinToString(";  ")
+                }
+
+                subResults.forEach { detailedSteps.addAll(it.detailedSteps) }
+                val answerFormula = combinedDisplay.replace(";  ", "\n")
+                detailedSteps.add(CasStep("Ответ", "Записываем ответ", answerFormula, "Записываем корни показательного уравнения."))
+                return SolveResult(combinedDisplay, null, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
+            }
+        }
+
+        return null
     }
 
     fun isolateVariableFull(equation: String, targetVar: String = "x"): SolveResult {
@@ -1413,22 +2466,166 @@ class CasEngine {
                 return false
             }
 
-            val poly = toPolynomial(masterEq, target, maxDeg = 3)
-            if (poly != null) {
+            val logRes = trySolveLogEquation(leftAst, rightAst, masterEq, target, detailedSteps)
+            if (logRes != null) return logRes
+
+            val radRes = trySolveRadicalEquation(leftAst, rightAst, target, detailedSteps)
+            if (radRes != null) return radRes
+
+            if (leftAst is Node.Func && leftAst.fn == "abs" && !rightAst.containsVar(target)) {
+                val rVal = evalNodeAtX(rightAst, 0.0)
+                if (rVal < -1e-9) {
+                    detailedSteps.add(CasStep("Шаг 1", "Анализируем модуль", "|...| = ${formatReadableExpr(rightAst.toExprString())} < 0", "Модуль числа не может быть отрицательным."))
+                    detailedSteps.add(CasStep("Ответ", "Записываем ответ", "Нет действительных корней", "Уравнение не имеет решений."))
+                    return SolveResult("Нет действительных корней", null, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
+                }
+                if (abs(rVal) <= 1e-9) {
+                    return isolateVariableFull("${leftAst.arg.toExprString()} = 0", target)
+                }
+                if (leftAst.arg !is Node.Variable || (leftAst.arg as Node.Variable).name != target) {
+                    return solveBranching(leftAst.arg, rightAst, target, detailedSteps, "Раскрываем модуль со знаками плюс и минус")
+                }
+            }
+
+            if (leftAst is Node.Pow && leftAst.exp is Node.Num && leftAst.exp.value.den == 1L && leftAst.exp.value.num >= 2L && leftAst.exp.value.num % 2L == 0L && !rightAst.containsVar(target)) {
+                val n = leftAst.exp.value.num
+                val rVal = evalNodeAtX(rightAst, 0.0)
+                if (rVal < -1e-9) {
+                    detailedSteps.add(CasStep("Шаг 1", "Анализируем четную степень", "(${leftAst.base.toExprString()})^$n = ${rightAst.toExprString()} < 0", "Четная степень числа не может быть отрицательной."))
+                    detailedSteps.add(CasStep("Ответ", "Записываем ответ", "Нет действительных корней", "Уравнение не имеет решений."))
+                    return SolveResult("Нет действительных корней", null, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
+                }
+                if (abs(rVal) <= 1e-9) {
+                    return isolateVariableFull("${leftAst.base.toExprString()} = 0", target)
+                }
+                val fracRight = (rightAst as? Node.Num)?.value
+                val exactRoot = if (fracRight != null) exactNthRoot(fracRight, n) else null
+                val rootNode = if (exactRoot != null) Node.Num(exactRoot) else simplify(Node.Pow(rightAst, Node.Div(Node.Num(Fraction(1)), leftAst.exp)))
+                if (leftAst.base !is Node.Variable || (leftAst.base as Node.Variable).name != target) {
+                    return solveBranching(leftAst.base, rootNode, target, detailedSteps, "Извлекаем корень четной степени $n")
+                }
+            }
+
+            val poly = toPolynomial(masterEq, target, maxDeg = 4)
+            if (poly == null) {
+                val expRes = trySolveExponentialEquation(leftAst, rightAst, target, detailedSteps)
+                if (expRes != null) return expRes
+            } else {
+                val a4 = simplify(poly[4] ?: Node.Num(Fraction(0)))
                 val a3 = simplify(poly[3] ?: Node.Num(Fraction(0)))
                 val a  = simplify(poly[2] ?: Node.Num(Fraction(0)))
                 val b  = simplify(poly[1] ?: Node.Num(Fraction(0)))
                 val c  = simplify(poly[0] ?: Node.Num(Fraction(0)))
 
-                // Уравнение вида 0 = const (переменная сократилась)
-                if (isZero(a3) && isZero(a) && isZero(b)) {
+                // Уравнение вида 0 = const или 0 = 0 (переменная сократилась)
+                if (isZero(a4) && isZero(a3) && isZero(a) && isZero(b)) {
                     if (!isZero(c)) {
                         detailedSteps.add(CasStep("Ответ", "Записываем ответ", "Нет решений", "Получено противоречивое равенство 0 = const."))
                         return SolveResult("Нет решений", null, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
                     } else {
-                        detailedSteps.add(CasStep("Ответ", "Записываем ответ", "$target ∈ ℝ", "Переменная может принимать любое действительное значение."))
-                        return SolveResult("$target ∈ ℝ (любое число)", null, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
+                        val exclusions = extractExclusions(leftAst, rightAst, dl, dr, target)
+                        val answerStr = if (exclusions.isNotEmpty()) {
+                            "$target ∈ ℝ, ${exclusions.joinToString(", ")}"
+                        } else {
+                            "$target ∈ ℝ (любое число)"
+                        }
+                        val explanationStr = if (exclusions.isNotEmpty()) {
+                            "Переменная может принимать любое действительное значение, кроме исключённых по ОДЗ: ${exclusions.joinToString(", ")}."
+                        } else {
+                            "Переменная может принимать любое действительное значение."
+                        }
+                        detailedSteps.add(CasStep("Ответ", "Записываем ответ", answerStr, explanationStr))
+                        return SolveResult(answerStr, null, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
                     }
+                }
+
+                // --- БИКВАДРАТНОЕ УРАВНЕНИЕ (степень 4, a3 = 0, b = 0) ---
+                if (!isZero(a4)) {
+                    if (isZero(a3) && isZero(b)) {
+                        if (a4 is Node.Num && a is Node.Num && c is Node.Num) {
+                            val aD = a4.value.toDouble()
+                            val bD = a.value.toDouble()
+                            val cD = c.value.toDouble()
+
+                            val D_t = bD * bD - 4.0 * aD * cD
+                            val a4Str = a4.toExprString()
+                            val aStr = a.toExprString()
+                            val cStr = c.toExprString()
+
+                            val biquadStepFormula = "Пусть t = $target² ≥ 0 ⇒ $a4Str·t² + ($aStr)·t + ($cStr) = 0\nD = b² − 4ac = $D_t"
+                            detailedSteps.add(
+                                CasStep(
+                                    badge = "Шаг 2",
+                                    title = "Замена переменной и вычисление дискриминанта",
+                                    formula = biquadStepFormula,
+                                    explanation = "Выполняем замену t = $target² (где t ≥ 0) и решаем квадратное уравнение относительно t."
+                                )
+                            )
+
+                            if (D_t < -1e-9) {
+                                detailedSteps.add(CasStep("Шаг 3", "Анализируем дискриминант", "D = $D_t < 0  ⇒  корней нет", "Дискриминант отрицателен, уравнение не имеет решений."))
+                                detailedSteps.add(CasStep("Ответ", "Записываем ответ", "Нет действительных корней", "Уравнение не имеет решений на множестве действительных чисел."))
+                                return SolveResult("Нет действительных корней", null, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
+                            }
+
+                            val sqrtDt = sqrt(max(0.0, D_t))
+                            val t1 = (-bD - sqrtDt) / (2.0 * aD)
+                            val t2 = (-bD + sqrtDt) / (2.0 * aD)
+
+                            val validTs = listOf(t1, t2).filter { it >= -1e-9 }.map { if (abs(it) < 1e-9) 0.0 else it }.distinct()
+                            if (validTs.isEmpty()) {
+                                detailedSteps.add(CasStep("Шаг 3", "Анализируем корни для t", "t₁ < 0, t₂ < 0  ⇒  корней нет", "Все корни t отрицательны, но t = $target² должно быть неотрицательным."))
+                                detailedSteps.add(CasStep("Ответ", "Записываем ответ", "Нет действительных корней", "Уравнение не имеет решений."))
+                                return SolveResult("Нет действительных корней", null, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
+                            }
+
+                            val candRoots = mutableListOf<Double>()
+                            for (tVal in validTs) {
+                                if (tVal == 0.0) {
+                                    candRoots.add(0.0)
+                                } else {
+                                    val sqt = sqrt(tVal)
+                                    candRoots.add(-sqt)
+                                    candRoots.add(sqt)
+                                }
+                            }
+
+                            val sortedCand = candRoots.distinct().sorted()
+                            val validRoots = sortedCand.filter { rVal ->
+                                val ext = isExtraneousRoot(rVal)
+                                if (ext) {
+                                    detailedSteps.add(CasStep("ОДЗ", "Проверка корня по ОДЗ", "$target = ${formatRoot(rVal)} — посторонний корень по ОДЗ", "При данном значении знаменатель обращается в ноль."))
+                                }
+                                !ext
+                            }
+
+                            if (validRoots.isEmpty()) {
+                                detailedSteps.add(CasStep("Ответ", "Записываем ответ", "Нет решений", "Все найденные корни являются посторонними по ОДЗ."))
+                                return SolveResult("Нет решений", null, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
+                            }
+
+                            val subs = listOf("₁", "₂", "₃", "₄")
+                            val parts = validRoots.mapIndexed { idx, v ->
+                                "$target${subs.getOrElse(idx) { "${idx + 1}" }} = ${formatRoot(v)}"
+                            }
+                            val displayStr = parts.joinToString(";  ")
+                            val answerFormula = validRoots.mapIndexed { idx, v ->
+                                "$target${subs.getOrElse(idx) { "${idx + 1}" }} = ${formatRoot(v)}"
+                            }.joinToString("\n")
+
+                            detailedSteps.add(
+                                CasStep(
+                                    badge = "Шаг 3",
+                                    title = "Обратная замена t = $target² и нахождение корней",
+                                    formula = displayStr,
+                                    explanation = "Находим решения биквадратного уравнения."
+                                )
+                            )
+                            detailedSteps.add(CasStep("Ответ", "Записываем ответ", answerFormula, "Записываем корни биквадратного уравнения."))
+                            return SolveResult(displayStr, null, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
+                        }
+                    }
+                    return SolveResult("Не удалось выразить '$target' (уравнение 4-й степени)", null)
                 }
 
                 // --- КУБИЧЕСКОЕ УРАВНЕНИЕ (степень 3) ---
@@ -1677,120 +2874,181 @@ class CasEngine {
             var guard = 0
             while (left !is Node.Variable && guard < 30) {
                 guard++
+                val stepNum = detailedSteps.count { it.badge.startsWith("Шаг") } + 1
                 when (val cur = left) {
                     is Node.Add -> {
                         if (cur.l.containsVar(target)) { right = Node.Sub(right, cur.r); left = cur.l }
                         else { right = Node.Sub(right, cur.l); left = cur.r }
-                        detailedSteps.add(CasStep("Шаг $guard", "Переносим слагаемое", "${left.toExprString()} = ${right.toExprString()}", "Переносим свободное слагаемое в правую часть уравнения с противоположным знаком."))
+                        right = simplify(right)
+                        left = simplify(left)
+                        detailedSteps.add(CasStep("Шаг $stepNum", "Переносим слагаемое", "${left.toExprString()} = ${right.toExprString()}", "Переносим свободное слагаемое в правую часть уравнения с противоположным знаком."))
                     }
                     is Node.Sub -> {
                         if (cur.l.containsVar(target)) { right = Node.Add(right, cur.r); left = cur.l }
                         else { right = Node.Sub(cur.l, right); left = cur.r }
-                        detailedSteps.add(CasStep("Шаг $guard", "Переносим слагаемое", "${left.toExprString()} = ${right.toExprString()}", "Переносим слагаемое в правую часть уравнения."))
+                        right = simplify(right)
+                        left = simplify(left)
+                        detailedSteps.add(CasStep("Шаг $stepNum", "Переносим слагаемое", "${left.toExprString()} = ${right.toExprString()}", "Переносим слагаемое в правую часть уравнения."))
                     }
                     is Node.Mul -> {
                         if (cur.l.containsVar(target)) { right = Node.Div(right, cur.r); left = cur.l }
                         else { right = Node.Div(right, cur.l); left = cur.r }
-                        detailedSteps.add(CasStep("Шаг $guard", "Делим на множитель", "${left.toExprString()} = ${right.toExprString()}", "Делим обе части уравнения на множитель."))
+                        right = simplify(right)
+                        left = simplify(left)
+                        detailedSteps.add(CasStep("Шаг $stepNum", "Делим на множитель", "${left.toExprString()} = ${right.toExprString()}", "Делим обе части уравнения на множитель."))
                     }
                     is Node.Div -> {
                         if (cur.l.containsVar(target)) { right = Node.Mul(right, cur.r); left = cur.l }
                         else { right = Node.Div(cur.l, right); left = cur.r }
-                        detailedSteps.add(CasStep("Шаг $guard", "Умножаем на знаменатель", "${left.toExprString()} = ${right.toExprString()}", "Умножаем обе части уравнения на знаменатель."))
+                        right = simplify(right)
+                        left = simplify(left)
+                        detailedSteps.add(CasStep("Шаг $stepNum", "Умножаем на знаменатель", "${left.toExprString()} = ${right.toExprString()}", "Умножаем обе части уравнения на знаменатель."))
                     }
                     is Node.Pow -> {
                         if (cur.exp.containsVar(target) && !cur.base.containsVar(target)) {
                             val rVal = evalNodeAtX(right, 0.0)
                             if (!right.containsVar(target) && rVal <= 1e-9) {
-                                detailedSteps.add(CasStep("Шаг $guard", "Анализируем показательную функцию", "${cur.toExprString()} = ${formatReadableExpr(right.toExprString())} ≤ 0", "Показательная функция принимает только положительные значения."))
+                                detailedSteps.add(CasStep("Шаг $stepNum", "Анализируем показательную функцию", "${cur.toExprString()} = ${formatReadableExpr(right.toExprString())} ≤ 0", "Показательная функция принимает только положительные значения."))
                                 detailedSteps.add(CasStep("Ответ", "Записываем ответ", "Нет действительных корней", "Уравнение не имеет решений на множестве действительных чисел."))
                                 return SolveResult("Нет действительных корней", null, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
                             }
                             if (cur.base == Node.Variable("e") || (cur.base is Node.Variable && (cur.base as Node.Variable).name.equals("e", ignoreCase = true))) {
                                 left = cur.exp
                                 right = simplify(Node.Func("ln", right))
-                                detailedSteps.add(CasStep("Шаг $guard", "Логарифмируем показательное уравнение", "${left.toExprString()} = ${right.toExprString()}", "Берем натуральный логарифм от обеих частей уравнения."))
+                                detailedSteps.add(CasStep("Шаг $stepNum", "Логарифмируем показательное уравнение", "${left.toExprString()} = ${right.toExprString()}", "Берем натуральный логарифм от обеих частей уравнения."))
                             } else {
                                 left = cur.exp
                                 right = simplify(Node.Div(Node.Func("ln", right), Node.Func("ln", cur.base)))
-                                detailedSteps.add(CasStep("Шаг $guard", "Логарифмируем показательное уравнение", "${left.toExprString()} = ${right.toExprString()}", "Логарифмируем обе части уравнения."))
+                                detailedSteps.add(CasStep("Шаг $stepNum", "Логарифмируем показательное уравнение", "${left.toExprString()} = ${right.toExprString()}", "Логарифмируем обе части уравнения."))
                             }
                         } else if (cur.base.containsVar(target)) {
                             val exp = cur.exp
-                            if (exp is Node.Num && exp.value.num == 2L && exp.value.den == 1L) {
+                            if (exp is Node.Num && exp.value.den == 1L && exp.value.num >= 2L) {
+                                val n = exp.value.num
                                 val rVal = evalNodeAtX(right, 0.0)
-                                if (!right.containsVar(target) && rVal < -1e-9) {
-                                    detailedSteps.add(CasStep("Шаг $guard", "Анализируем квадрат", "(...)² = ${right.toExprString()} < 0", "Квадрат числа не может быть отрицательным."))
-                                    detailedSteps.add(CasStep("Ответ", "Записываем ответ", "Нет действительных корней", "Уравнение не имеет решений."))
-                                    return SolveResult("Нет действительных корней", null, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
+                                if (!right.containsVar(target)) {
+                                    if (n % 2L == 0L) {
+                                        if (rVal < -1e-9) {
+                                            detailedSteps.add(CasStep("Шаг $stepNum", "Анализируем четную степень", "(${cur.base.toExprString()})^$n = ${right.toExprString()} < 0", "Четная степень числа не может быть отрицательной."))
+                                            detailedSteps.add(CasStep("Ответ", "Записываем ответ", "Нет действительных корней", "Уравнение не имеет решений."))
+                                            return SolveResult("Нет действительных корней", null, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
+                                        } else if (abs(rVal) < 1e-9) {
+                                            right = Node.Num(Fraction(0))
+                                            left = cur.base
+                                        } else {
+                                            val fracRight = (right as? Node.Num)?.value
+                                            val exactRoot = if (fracRight != null) exactNthRoot(fracRight, n) else null
+                                            val rootNode = if (exactRoot != null) Node.Num(exactRoot) else simplify(Node.Pow(right, Node.Div(Node.Num(Fraction(1)), exp)))
+                                            if (cur.base !is Node.Variable || (cur.base as Node.Variable).name != target) {
+                                                return solveBranching(cur.base, rootNode, target, detailedSteps, "Извлекаем корень четной степени $n")
+                                            }
+                                            hasPlusMinus = true
+                                            right = rootNode
+                                            left = cur.base
+                                        }
+                                    } else {
+                                        // Odd exponent
+                                        if (rVal < 0) {
+                                            val posRight = simplify(negateNode(right))
+                                            val fracPos = (posRight as? Node.Num)?.value
+                                            val exactPos = if (fracPos != null) exactNthRoot(fracPos, n) else null
+                                            if (exactPos != null) {
+                                                right = Node.Num(Fraction(-exactPos.num, exactPos.den))
+                                            } else {
+                                                val rAbs = abs(rVal)
+                                                val d = -rAbs.pow(1.0 / n)
+                                                if (abs(d - round(d)) < 1e-9) {
+                                                    right = Node.Num(Fraction(round(d).toLong()))
+                                                } else {
+                                                    right = Node.Num(Fraction.fromDouble(d))
+                                                }
+                                            }
+                                        } else {
+                                            val fracRight = (right as? Node.Num)?.value
+                                            val exactRoot = if (fracRight != null) exactNthRoot(fracRight, n) else null
+                                            if (exactRoot != null) {
+                                                right = Node.Num(exactRoot)
+                                            } else {
+                                                right = simplify(Node.Pow(right, Node.Div(Node.Num(Fraction(1)), exp)))
+                                            }
+                                        }
+                                        left = cur.base
+                                    }
+                                } else {
+                                    right = Node.Pow(right, Node.Div(Node.Num(Fraction(1)), exp))
+                                    left = cur.base
                                 }
-                                right = Node.Sqrt(right)
-                                hasPlusMinus = true
                             } else {
                                 right = Node.Pow(right, Node.Div(Node.Num(Fraction(1)), exp))
+                                left = cur.base
                             }
-                            left = cur.base
+                            right = simplify(right)
+                            left = simplify(left)
+                            detailedSteps.add(CasStep("Шаг $stepNum", "Извлекаем корень степени ${exp.toExprString()}", "${left.toExprString()} = ${right.toExprString()}", "Извлекаем корень из обеих частей уравнения."))
                         } else break
                     }
                     is Node.Sqrt -> {
                         val rVal = evalNodeAtX(right, 0.0)
                         if (!right.containsVar(target) && rVal < -1e-9) {
-                            detailedSteps.add(CasStep("Шаг $guard", "Анализируем квадратный корень", "√(...) = ${formatReadableExpr(right.toExprString())} < 0", "Арифметический квадратный корень не может быть отрицательным."))
+                            detailedSteps.add(CasStep("Шаг $stepNum", "Анализируем квадратный корень", "√(...) = ${formatReadableExpr(right.toExprString())} < 0", "Арифметический квадратный корень не может быть отрицательным."))
                             detailedSteps.add(CasStep("Ответ", "Записываем ответ", "Нет действительных корней", "Уравнение не имеет решений на множестве действительных чисел."))
                             return SolveResult("Нет действительных корней", null, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
                         }
                         right = simplify(Node.Pow(right, Node.Num(Fraction(2))))
                         left = cur.inner
                         needRootCheck = true
-                        detailedSteps.add(CasStep("Шаг $guard", "Возводим в квадрат", "${left.toExprString()} = ${right.toExprString()}", "Возводим обе части уравнения в квадрат для избавления от знака корня."))
+                        detailedSteps.add(CasStep("Шаг $stepNum", "Возводим в квадрат", "${left.toExprString()} = ${right.toExprString()}", "Возводим обе части уравнения в квадрат для избавления от знака корня."))
                     }
                     is Node.Func -> {
                         when (cur.fn) {
                             "sqrt" -> {
                                 val rVal = evalNodeAtX(right, 0.0)
                                 if (!right.containsVar(target) && rVal < -1e-9) {
-                                    detailedSteps.add(CasStep("Шаг $guard", "Анализируем квадратный корень", "√(...) = ${formatReadableExpr(right.toExprString())} < 0", "Арифметический квадратный корень не может быть отрицательным."))
+                                    detailedSteps.add(CasStep("Шаг $stepNum", "Анализируем квадратный корень", "√(...) = ${formatReadableExpr(right.toExprString())} < 0", "Арифметический квадратный корень не может быть отрицательным."))
                                     detailedSteps.add(CasStep("Ответ", "Записываем ответ", "Нет действительных корней", "Уравнение не имеет решений на множестве действительных чисел."))
                                     return SolveResult("Нет действительных корней", null, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
                                 }
                                 right = simplify(Node.Pow(right, Node.Num(Fraction(2))))
                                 left = cur.arg
                                 needRootCheck = true
-                                detailedSteps.add(CasStep("Шаг $guard", "Возводим в квадрат", "${left.toExprString()} = ${right.toExprString()}", "Возводим обе части уравнения в квадрат для избавления от знака корня."))
+                                detailedSteps.add(CasStep("Шаг $stepNum", "Возводим в квадрат", "${left.toExprString()} = ${right.toExprString()}", "Возводим обе части уравнения в квадрат для избавления от знака корня."))
                             }
                             "cbrt" -> {
                                 right = simplify(Node.Pow(right, Node.Num(Fraction(3))))
                                 left = cur.arg
-                                detailedSteps.add(CasStep("Шаг $guard", "Возводим в куб", "${left.toExprString()} = ${right.toExprString()}", "Возводим обе части уравнения в куб."))
+                                detailedSteps.add(CasStep("Шаг $stepNum", "Возводим в куб", "${left.toExprString()} = ${right.toExprString()}", "Возводим обе части уравнения в куб."))
                             }
                             "abs" -> {
                                 val rVal = evalNodeAtX(right, 0.0)
                                 if (!right.containsVar(target) && rVal < -1e-9) {
-                                    detailedSteps.add(CasStep("Шаг $guard", "Анализируем модуль", "|...| = ${formatReadableExpr(right.toExprString())} < 0", "Модуль числа не может быть отрицательным."))
+                                    detailedSteps.add(CasStep("Шаг $stepNum", "Анализируем модуль", "|...| = ${formatReadableExpr(right.toExprString())} < 0", "Модуль числа не может быть отрицательным."))
                                     detailedSteps.add(CasStep("Ответ", "Записываем ответ", "Нет действительных корней", "Уравнение не имеет решений."))
                                     return SolveResult("Нет действительных корней", null, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
                                 }
                                 if (!right.containsVar(target) && abs(rVal) <= 1e-9) {
                                     left = cur.arg
                                     right = Node.Num(Fraction(0))
-                                    detailedSteps.add(CasStep("Шаг $guard", "Раскрываем модуль", "${left.toExprString()} = 0", "Модуль равен нулю, если подмодульное выражение равно нулю."))
+                                    detailedSteps.add(CasStep("Шаг $stepNum", "Раскрываем модуль", "${left.toExprString()} = 0", "Модуль равен нулю, если подмодульное выражение равно нулю."))
                                 } else {
+                                    if (cur.arg !is Node.Variable || (cur.arg as Node.Variable).name != target) {
+                                        return solveBranching(cur.arg, right, target, detailedSteps, "Раскрываем модуль со знаками плюс и минус")
+                                    }
                                     hasPlusMinus = true
                                     left = cur.arg
-                                    detailedSteps.add(CasStep("Шаг $guard", "Раскрываем модуль", "${left.toExprString()} = ±${right.toExprString()}", "Раскрываем модуль со знаками плюс и минус."))
+                                    detailedSteps.add(CasStep("Шаг $stepNum", "Раскрываем модуль", "${left.toExprString()} = ±${right.toExprString()}", "Раскрываем модуль со знаками плюс и минус."))
                                 }
                             }
                             "ln" -> {
                                 left = cur.arg
                                 right = simplify(Node.Pow(Node.Variable("e"), right))
                                 odzCheckNodes.add(cur.arg)
-                                detailedSteps.add(CasStep("Шаг $guard", "Потенцируем логарифмическое уравнение", "${left.toExprString()} = ${right.toExprString()}", "Используем определение натурального логарифма: ln(a) = b  ⇒  a = e^b."))
+                                detailedSteps.add(CasStep("Шаг $stepNum", "Потенцируем логарифмическое уравнение", "${left.toExprString()} = ${right.toExprString()}", "Используем определение натурального логарифма: ln(a) = b  ⇒  a = e^b."))
                             }
                             "log" -> {
                                 left = cur.arg
                                 right = simplify(Node.Pow(Node.Num(Fraction(10)), right))
                                 odzCheckNodes.add(cur.arg)
-                                detailedSteps.add(CasStep("Шаг $guard", "Потенцируем логарифмическое уравнение", "${left.toExprString()} = ${right.toExprString()}", "Используем определение десятичного логарифма: log(a) = b  ⇒  a = 10^b."))
+                                detailedSteps.add(CasStep("Шаг $stepNum", "Потенцируем логарифмическое уравнение", "${left.toExprString()} = ${right.toExprString()}", "Используем определение десятичного логарифма: log(a) = b  ⇒  a = 10^b."))
                             }
                             else -> break
                         }
@@ -1805,7 +3063,7 @@ class CasEngine {
 
             if (cleanRight.containsVar(target)) {
                 val remEq = simplify(Node.Sub(left, cleanRight))
-                val remPoly = toPolynomial(remEq, target)
+                val remPoly = toPolynomial(remEq, target, maxDeg = 4)
                 if (remPoly != null) {
                     val ra = simplify(remPoly[2] ?: Node.Num(Fraction(0)))
                     val rb = simplify(remPoly[1] ?: Node.Num(Fraction(0)))
@@ -1815,13 +3073,35 @@ class CasEngine {
                         return if (!isZero(rc)) {
                             SolveResult("Нет решений", null, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
                         } else {
-                            SolveResult("$target ∈ ℝ (любое число)", null, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
+                            val exclusions = extractExclusions(leftAst, rightAst, dl, dr, target)
+                            val answerStr = if (exclusions.isNotEmpty()) "$target ∈ ℝ, ${exclusions.joinToString(", ")}" else "$target ∈ ℝ (любое число)"
+                            SolveResult(answerStr, null, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
+                        }
+                    } else if (!isZero(ra)) {
+                        if (ra is Node.Num && rb is Node.Num && rc is Node.Num) {
+                            val aD = ra.value.toDouble()
+                            val bD = rb.value.toDouble()
+                            val cD = rc.value.toDouble()
+                            val D = bD * bD - 4.0 * aD * cD
+                            if (D >= 0) {
+                                val sqrtD = sqrt(max(0.0, D))
+                                val r1 = (-bD - sqrtD) / (2.0 * aD)
+                                val r2 = (-bD + sqrtD) / (2.0 * aD)
+                                val candRoots = listOf(r1, r2).distinct()
+                                val validRoots = candRoots.filter { rVal ->
+                                    !isExtraneousRoot(rVal) &&
+                                    abs(evalNodeAtX(leftAst, rVal) - evalNodeAtX(rightAst, rVal)) < 1e-5
+                                }.sorted()
+                                if (validRoots.isNotEmpty()) {
+                                    val displayStr = formatRootsDisplay(validRoots, target)
+                                    val answerFormula = formatRootsAnswer(validRoots, target)
+                                    detailedSteps.add(CasStep("Ответ", "Записываем ответ", answerFormula, "Записываем корни уравнения."))
+                                    return SolveResult(displayStr, null, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
+                                }
+                            }
                         }
                     } else if (isZero(ra) && !isZero(rb)) {
                         cleanRight = simplify(Node.Div(negateNode(rc), rb))
-                    } else if (!isZero(ra) && isZero(rb)) {
-                        cleanRight = simplify(Node.Sqrt(Node.Div(negateNode(rc), ra)))
-                        hasPlusMinus = true
                     }
                 }
             }
@@ -1863,8 +3143,9 @@ class CasEngine {
             val rightStr = cleanRight.toExprString()
 
             if (hasPlusMinus) {
-                val displayStr = "$target = ±$rightStr"
-                detailedSteps.add(CasStep("Ответ", "Записываем ответ", displayStr, "Записываем ответ с обоими знаками."))
+                val displayStr = "${target}₁ = -$rightStr;  ${target}₂ = $rightStr"
+                val answerFormula = "${target}₁ = -$rightStr\n${target}₂ = $rightStr"
+                detailedSteps.add(CasStep("Ответ", "Записываем ответ", answerFormula, "Записываем ответ с обоими знаками."))
                 return SolveResult(displayStr, cleanRight, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
             }
 
@@ -2082,7 +3363,7 @@ class CasEngine {
 
     fun hasPhysicalConstant(node: Node): Boolean {
         return when (node) {
-            is Node.Num -> false
+            is Node.Num, is Node.Approx -> false
             is Node.Variable -> isConstant(node.name)
             is Node.Add -> hasPhysicalConstant(node.l) || hasPhysicalConstant(node.r)
             is Node.Sub -> hasPhysicalConstant(node.l) || hasPhysicalConstant(node.r)
@@ -2091,12 +3372,14 @@ class CasEngine {
             is Node.Pow -> hasPhysicalConstant(node.base) || hasPhysicalConstant(node.exp)
             is Node.Sqrt -> hasPhysicalConstant(node.inner)
             is Node.Func -> hasPhysicalConstant(node.arg)
+            is Node.Comb -> hasPhysicalConstant(node.n) || hasPhysicalConstant(node.k)
         }
     }
 
     fun evalNodeAtX(node: Node, xVal: Double): Double {
         return when (node) {
             is Node.Num -> node.value.toDouble()
+            is Node.Approx -> node.value
             is Node.Variable -> {
                 val constVal = getConstantValue(node.name)
                 if (constVal != null) {
@@ -2165,6 +3448,22 @@ class CasEngine {
                             res
                         }
                     }
+                    else -> Double.NaN
+                }
+            }
+            is Node.Comb -> {
+                val nD = evalNodeAtX(node.n, xVal)
+                val kD = evalNodeAtX(node.k, xVal)
+                if (nD.isNaN() || kD.isNaN() || nD < 0.0 || kD < 0.0 || nD % 1.0 != 0.0 || kD % 1.0 != 0.0) {
+                    throw ArithmeticException("Индексы должны быть целыми неотрицательными числами")
+                }
+                if (kD > nD) {
+                    throw ArithmeticException("Верхний индекс k не может быть больше нижнего n")
+                }
+                val resNode = evalCombinatorics(node.isPerm, nD.toLong(), kD.toLong())
+                when (resNode) {
+                    is Node.Num -> resNode.value.toDouble()
+                    is Node.Approx -> resNode.value
                     else -> Double.NaN
                 }
             }

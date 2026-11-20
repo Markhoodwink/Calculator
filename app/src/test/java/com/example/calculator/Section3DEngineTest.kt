@@ -121,4 +121,80 @@ class Section3DEngineTest {
         assertEquals("сер. AB", snapMid.label)
         assertEquals(cube.vertices[0].lerp(cube.vertices[1], 0.5), snapMid.pos)
     }
+
+    @Test
+    fun testEveryPolyhedronOutwardFacesAndTwoAdjacentFacesPerEdge() {
+        val polyhedra = Section3DEngine.getPolyhedraPresets()
+        assertEquals(6, polyhedra.size)
+
+        for (poly in polyhedra) {
+            val polyCenter = Section3DEngine.Vec3(
+                poly.vertices.sumOf { it.x } / poly.vertices.size,
+                poly.vertices.sumOf { it.y } / poly.vertices.size,
+                poly.vertices.sumOf { it.z } / poly.vertices.size
+            )
+
+            poly.faces.forEachIndexed { fIdx, face ->
+                val v0 = poly.vertices[face.vertexIndices[0]]
+                val v1 = poly.vertices[face.vertexIndices[1]]
+                val v2 = poly.vertices[face.vertexIndices[2]]
+                val normal = (v1 - v0).cross(v2 - v0)
+
+                val faceCenter = Section3DEngine.Vec3(
+                    face.vertexIndices.sumOf { poly.vertices[it].x } / face.vertexIndices.size,
+                    face.vertexIndices.sumOf { poly.vertices[it].y } / face.vertexIndices.size,
+                    face.vertexIndices.sumOf { poly.vertices[it].z } / face.vertexIndices.size
+                )
+                val dot = normal.dot(faceCenter - polyCenter)
+                assertTrue("Face $fIdx of ${poly.id} must point outward (dot = $dot)", dot > 1e-6)
+            }
+
+            poly.edges.forEachIndexed { eIdx, edge ->
+                val adjacent = Section3DEngine.getAdjacentFacesForEdge(poly, edge)
+                assertEquals("Edge $eIdx (${edge.v1}-${edge.v2}) of ${poly.id} must have 2 adjacent faces", 2, adjacent.size)
+            }
+        }
+    }
+
+    @Test
+    fun testPrism3EdgeVisibilityAndRotation() {
+        val prism = Section3DEngine.getPolyhedron("prism3")!!
+
+        val yaw1 = -120.0
+        val pitch = 25.0
+
+        val visFaces1 = BooleanArray(prism.faces.size) { fIdx ->
+            Section3DEngine.isFaceFrontFacing(prism.faces[fIdx], prism.vertices, yaw1, pitch)
+        }
+
+        val topFaceIdx = prism.faces.indexOfFirst { it.vertexIndices.containsAll(listOf(3, 4, 5)) }
+        val frontFace1Idx = prism.faces.indexOfFirst { it.vertexIndices.containsAll(listOf(0, 1, 4, 3)) }
+        val frontFace2Idx = prism.faces.indexOfFirst { it.vertexIndices.containsAll(listOf(1, 2, 5, 4)) }
+        val backFaceIdx = prism.faces.indexOfFirst { it.vertexIndices.containsAll(listOf(2, 0, 3, 5)) }
+        val bottomFaceIdx = prism.faces.indexOfFirst { it.vertexIndices.containsAll(listOf(0, 2, 1)) }
+
+        assertTrue("Top face A1B1C1 must be front-facing", visFaces1[topFaceIdx])
+        assertTrue("Side face ABB1A1 must be front-facing", visFaces1[frontFace1Idx])
+        assertTrue("Side face BCC1B1 must be front-facing", visFaces1[frontFace2Idx])
+        assertFalse("Back face ACC1A1 must be back-facing", visFaces1[backFaceIdx])
+        assertFalse("Bottom face ABC must be back-facing", visFaces1[bottomFaceIdx])
+
+        val edgeAB = prism.edges.first { (it.v1 == 0 && it.v2 == 1) || (it.v1 == 1 && it.v2 == 0) }
+        val edgeBC = prism.edges.first { (it.v1 == 1 && it.v2 == 2) || (it.v1 == 2 && it.v2 == 1) }
+        val edgeBB1 = prism.edges.first { (it.v1 == 1 && it.v2 == 4) || (it.v1 == 4 && it.v2 == 1) }
+        val edgeAC = prism.edges.first { (it.v1 == 0 && it.v2 == 2) || (it.v1 == 2 && it.v2 == 0) }
+
+        assertTrue("Edge AB must be solid", Section3DEngine.isEdgeVisible(prism, edgeAB, visFaces1))
+        assertTrue("Edge BC must be solid", Section3DEngine.isEdgeVisible(prism, edgeBC, visFaces1))
+        assertTrue("Edge BB1 must be solid", Section3DEngine.isEdgeVisible(prism, edgeBB1, visFaces1))
+        assertFalse("Edge AC must be dashed", Section3DEngine.isEdgeVisible(prism, edgeAC, visFaces1))
+
+        val yaw2 = 60.0
+        val visFaces2 = BooleanArray(prism.faces.size) { fIdx ->
+            Section3DEngine.isFaceFrontFacing(prism.faces[fIdx], prism.vertices, yaw2, pitch)
+        }
+
+        assertTrue("After 180deg rotation, edge AC must be solid", Section3DEngine.isEdgeVisible(prism, edgeAC, visFaces2))
+        assertFalse("After 180deg rotation, edge BB1 must be dashed", Section3DEngine.isEdgeVisible(prism, edgeBB1, visFaces2))
+    }
 }

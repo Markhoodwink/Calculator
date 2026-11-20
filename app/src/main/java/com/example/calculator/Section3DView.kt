@@ -126,6 +126,14 @@ class Section3DView @JvmOverloads constructor(
         strokeWidth = dpToPx(2.8f)
         strokeJoin = Paint.Join.ROUND
     }
+    private val sectionDashedBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#0284C7")
+        style = Paint.Style.STROKE
+        strokeWidth = dpToPx(2.2f)
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+        pathEffect = DashPathEffect(floatArrayOf(dpToPx(6f), dpToPx(4f)), 0f)
+    }
     private val sectionNodePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#38BDF8")
         style = Paint.Style.FILL
@@ -345,6 +353,7 @@ class Section3DView @JvmOverloads constructor(
             snapSubdivPaint.color = Color.argb(140, 148, 163, 184)
             sectionFillPaint.color = Color.argb(85, 56, 189, 248)
             sectionBorderPaint.color = Color.parseColor("#38BDF8")
+            sectionDashedBorderPaint.color = Color.parseColor("#38BDF8")
         } else {
             bgPaint.color = Color.parseColor("#F8FAFC")
             gridPaint.color = Color.parseColor("#E2E8F0")
@@ -356,6 +365,7 @@ class Section3DView @JvmOverloads constructor(
             snapSubdivPaint.color = Color.argb(140, 100, 116, 139)
             sectionFillPaint.color = Color.argb(75, 2, 132, 199)
             sectionBorderPaint.color = Color.parseColor("#0284C7")
+            sectionDashedBorderPaint.color = Color.parseColor("#0284C7")
         }
 
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), bgPaint)
@@ -398,64 +408,38 @@ class Section3DView @JvmOverloads constructor(
         axisLabelPaint.color = zAxisPaint.color
         canvas.drawText("Z", zP.x, zP.y - dpToPx(6f), axisLabelPaint)
 
-        // 3. Compute Camera Position in World Space for Back-Face Culling
-        val yawRad = Math.toRadians(cameraYaw.toDouble())
-        val pitchRad = Math.toRadians(cameraPitch.toDouble())
-        val dist = 4.0
-        val camPos = Section3DEngine.Vec3(
-            sin(yawRad) * cos(pitchRad) * dist,
-            -cos(yawRad) * cos(pitchRad) * dist,
-            sin(pitchRad) * dist
-        )
-
-        // Determine visibility of each face
-        val faceVisible = BooleanArray(polyhedron.faces.size)
-        polyhedron.faces.forEachIndexed { fIdx, face ->
-            if (face.vertexIndices.size >= 3) {
-                val v0 = polyhedron.vertices[face.vertexIndices[0]]
-                val v1 = polyhedron.vertices[face.vertexIndices[1]]
-                val v2 = polyhedron.vertices[face.vertexIndices[2]]
-                var normal = (v1 - v0).cross(v2 - v0)
-
-                val centroid = Section3DEngine.Vec3(
-                    face.vertexIndices.sumOf { polyhedron.vertices[it].x } / face.vertexIndices.size,
-                    face.vertexIndices.sumOf { polyhedron.vertices[it].y } / face.vertexIndices.size,
-                    face.vertexIndices.sumOf { polyhedron.vertices[it].z } / face.vertexIndices.size
-                )
-
-                if (normal.dot(centroid) < 0) {
-                    normal = normal * -1.0
-                }
-
-                val viewDir = camPos - centroid
-                faceVisible[fIdx] = normal.dot(viewDir) > 0
-            } else {
-                faceVisible[fIdx] = true
-            }
+        // 3. Compute Face Visibility in Perspective View Space
+        val faceVisible = BooleanArray(polyhedron.faces.size) { fIdx ->
+            Section3DEngine.isFaceFrontFacing(
+                polyhedron.faces[fIdx],
+                polyhedron.vertices,
+                cameraYaw.toDouble(),
+                cameraPitch.toDouble(),
+                cameraDist = 4.0
+            )
         }
 
-        // 4. Draw Edges (Hidden back edges dashed, Front edges solid)
         val projVerts = polyhedron.vertices.map { project(it) }
 
+        val dashedPolyEdges = mutableListOf<Section3DEngine.Edge3D>()
+        val solidPolyEdges = mutableListOf<Section3DEngine.Edge3D>()
+
         polyhedron.edges.forEach { edge ->
-            val p1 = projVerts[edge.v1]
-            val p2 = projVerts[edge.v2]
-
-            val containingFaces = polyhedron.faces.indices.filter { fIdx ->
-                val indices = polyhedron.faces[fIdx].vertexIndices
-                indices.contains(edge.v1) && indices.contains(edge.v2)
-            }
-
-            val isVisibleEdge = containingFaces.isEmpty() || containingFaces.any { faceVisible[it] }
-
-            if (isVisibleEdge) {
-                canvas.drawLine(p1.x, p1.y, p2.x, p2.y, solidEdgePaint)
+            if (Section3DEngine.isEdgeVisible(polyhedron, edge, faceVisible)) {
+                solidPolyEdges.add(edge)
             } else {
-                canvas.drawLine(p1.x, p1.y, p2.x, p2.y, dashedEdgePaint)
+                dashedPolyEdges.add(edge)
             }
         }
 
-        // 5. Draw Cross-Section Polygon
+        // 4. Draw Hidden Back Polyhedron Edges (Dashed) First
+        dashedPolyEdges.forEach { edge ->
+            val p1 = projVerts[edge.v1]
+            val p2 = projVerts[edge.v2]
+            canvas.drawLine(p1.x, p1.y, p2.x, p2.y, dashedEdgePaint)
+        }
+
+        // 5. Draw Cross-Section Polygon (Fill & Segments)
         val result = crossSectionResult
         if (selectedPoints.size == 3 && result != null && result.isValid && result.polygonVertices.isNotEmpty()) {
             polyPath.reset()
@@ -467,8 +451,30 @@ class Section3DView @JvmOverloads constructor(
             polyPath.close()
 
             canvas.drawPath(polyPath, sectionFillPaint)
-            canvas.drawPath(polyPath, sectionBorderPaint)
 
+            val count = result.polygonVertices.size
+            for (i in 0 until count) {
+                val v1 = result.polygonVertices[i]
+                val v2 = result.polygonVertices[(i + 1) % count]
+                val p1 = secProj[i]
+                val p2 = secProj[(i + 1) % count]
+
+                val isVisibleSeg = Section3DEngine.isSegmentVisible(v1, v2, polyhedron, faceVisible)
+                val paintToUse = if (isVisibleSeg) sectionBorderPaint else sectionDashedBorderPaint
+                canvas.drawLine(p1.x, p1.y, p2.x, p2.y, paintToUse)
+            }
+        }
+
+        // 6. Draw Visible Front Polyhedron Edges (Solid) On Top
+        solidPolyEdges.forEach { edge ->
+            val p1 = projVerts[edge.v1]
+            val p2 = projVerts[edge.v2]
+            canvas.drawLine(p1.x, p1.y, p2.x, p2.y, solidEdgePaint)
+        }
+
+        // 7. Draw Cross-Section Nodes
+        if (selectedPoints.size == 3 && result != null && result.isValid && result.polygonVertices.isNotEmpty()) {
+            val secProj = result.polygonVertices.map { project(it) }
             secProj.forEach { p ->
                 canvas.drawCircle(p.x, p.y, dpToPx(4.5f), sectionNodePaint)
                 canvas.drawCircle(p.x, p.y, dpToPx(4.5f), sectionNodeStrokePaint)

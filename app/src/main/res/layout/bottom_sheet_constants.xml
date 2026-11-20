@@ -1,13 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/layoutBottomSheetConstants"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:background="#0F172A"
+    android:background="#1E293B"
     android:orientation="vertical"
     android:padding="16dp">
 
     <!-- Индикатор перетаскивания (Drag Handle) -->
     <View
+        android:id="@+id/dragHandleConstants"
         android:layout_width="40dp"
         android:layout_height="4dp"
         android:layout_gravity="center_horizontal"
@@ -25,6 +27,7 @@
         android:textStyle="bold" />
 
     <TextView
+        android:id="@+id/tvConstantsSubtitle"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="2dp"
@@ -33,6 +36,7 @@
         android:textSize="12sp" />
 
     <View
+        android:id="@+id/dividerConstants"
         android:layout_width="match_parent"
         android:layout_height="1dp"
         android:layout_marginVertical="8dp"

@@ -7,6 +7,8 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
@@ -18,6 +20,7 @@ import android.text.style.AlignmentSpan
 import android.text.style.ForegroundColorSpan
 import android.text.style.StyleSpan
 import android.view.HapticFeedbackConstants
+import android.view.MotionEvent
 import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
@@ -33,6 +36,8 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import java.math.BigDecimal
 import java.math.MathContext
 import java.math.RoundingMode
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.math.log10
@@ -68,6 +73,17 @@ class MainActivity : AppCompatActivity() {
     private var engPrefix: String = ""
     private var engStep: Int = 0
 
+    private val previewExecutor = Executors.newSingleThreadExecutor()
+    private val previewRequestId = AtomicLong(0)
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    private var lastVarChipList: List<String> = emptyList()
+
+    override fun onDestroy() {
+        super.onDestroy()
+        previewExecutor.shutdown()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -101,7 +117,7 @@ class MainActivity : AppCompatActivity() {
         btnCasSteps = findViewById(R.id.btnCasSteps)
 
         btnCasSteps.setOnClickListener { v ->
-            triggerKeyHaptic(v)
+            triggerKeyHaptic(v, isHeavy = true)
             val steps = lastSolveResult?.detailedSteps ?: emptyList()
             if (steps.isNotEmpty()) {
                 StepsBottomSheet(this, steps) { view -> triggerKeyHaptic(view) }.show()
@@ -119,29 +135,45 @@ class MainActivity : AppCompatActivity() {
             engPrefix = ""
             engStep = 0
 
+            val requestId = previewRequestId.incrementAndGet()
+
             val opsAndFuncs = listOf(
                 "+", "-", "*", "/", "·", "⋅", "∙", "×", "÷", "^", "√", "cbrt", "sin", "cos", "tan",
-                "asin", "acos", "atan", "log", "ln", "fact", "%", "π", "e", "Ans"
+                "asin", "acos", "atan", "log", "ln", "fact", "%", "π", "e", "Ans", "comb", "perm"
             )
             val hasOpOrFunc = opsAndFuncs.any { rawExpr.contains(it) }
 
             if (rawExpr.isBlank() || rawExpr.contains("=") || extractVariables(rawExpr).isNotEmpty() || !hasOpOrFunc) {
                 casioDisplay.setLivePreview(null)
             } else {
-                try {
-                    val eval = casEngine.evaluateFull(rawExpr)
-                    val formula = eval.displayFormula.trim()
-                    if (formula.isNotBlank() &&
-                        !formula.startsWith("Ошибка") &&
-                        !formula.startsWith("Error") &&
-                        formula != rawExpr.trim()
-                    ) {
-                        casioDisplay.setLivePreview(eval.displayFormula)
-                    } else {
-                        casioDisplay.setLivePreview(null)
+                val degreeMode = casEngine.isDegreeMode
+                val lastAns = casEngine.lastAnswer
+
+                previewExecutor.execute {
+                    var previewText: String? = null
+                    try {
+                        val previewEngine = CasEngine().apply {
+                            isDegreeMode = degreeMode
+                            lastAnswer = lastAns
+                        }
+                        val eval = previewEngine.evaluateFull(rawExpr, includeSteps = false)
+                        val formula = eval.displayFormula.trim()
+                        if (formula.isNotBlank() &&
+                            !formula.startsWith("Ошибка") &&
+                            !formula.startsWith("Error") &&
+                            formula != rawExpr.trim()
+                        ) {
+                            previewText = eval.displayFormula
+                        }
+                    } catch (_: Exception) {}
+
+                    if (requestId == previewRequestId.get()) {
+                        mainHandler.post {
+                            if (requestId == previewRequestId.get()) {
+                                casioDisplay.setLivePreview(previewText)
+                            }
+                        }
                     }
-                } catch (_: Exception) {
-                    casioDisplay.setLivePreview(null)
                 }
             }
         }
@@ -214,6 +246,7 @@ class MainActivity : AppCompatActivity() {
             val newDark = !ThemeManager.isDarkTheme(this)
             ThemeManager.setDarkTheme(this, newDark)
             applyThemeState(newDark)
+            lastVarChipList = emptyList()
             updateVariableChips(casioDisplay.getRawExpression())
         }
 
@@ -445,47 +478,13 @@ class MainActivity : AppCompatActivity() {
 
     // ─────────────────────────────────────────────────────────────────────────
 
-    private fun triggerKeyHaptic(v: View) {
-        val performed = v.performHapticFeedback(
-            HapticFeedbackConstants.KEYBOARD_TAP,
-            HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING
-        )
-        if (performed) return
-
-        try {
-            val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                val vm = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
-                vm?.defaultVibrator
-            } else {
-                @Suppress("DEPRECATION")
-                getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
-            } ?: return
-
-            if (!vibrator.hasVibrator()) return
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                try {
-                    val effect = VibrationEffect.startComposition()
-                        .addPrimitive(VibrationEffect.Composition.PRIMITIVE_LOW_TICK, 0.4f)
-                        .compose()
-                    vibrator.vibrate(effect)
-                } catch (_: Throwable) {
-                    vibrator.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK))
-                }
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                vibrator.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK))
-            } else {
-                val amplitude = if (vibrator.hasAmplitudeControl()) 35 else VibrationEffect.DEFAULT_AMPLITUDE
-                vibrator.vibrate(VibrationEffect.createOneShot(4L, amplitude))
-            }
-        } catch (_: Throwable) {}
+    private fun triggerKeyHaptic(v: View, isHeavy: Boolean = false) {
+        KeyFeedback.trigger(v, isHeavy)
     }
 
-    private fun bindKey(buttonId: Int, action: () -> Unit) {
-        findViewById<Button>(buttonId)?.setOnClickListener {
-            triggerKeyHaptic(it)
-            action()
-        }
+    private fun bindKey(buttonId: Int, isHeavy: Boolean = false, action: () -> Unit) {
+        val btn = findViewById<View>(buttonId) ?: return
+        btn.bindCrispKey(isHeavy) { action() }
     }
 
     private fun initKeypad() {
@@ -537,8 +536,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         // ── SHIFT кнопка ─────────────────────────────────────────────────────
-        btnShift.setOnClickListener {
-            triggerKeyHaptic(it)
+        bindKey(R.id.btnShift) {
             toggleShift()
         }
 
@@ -653,13 +651,22 @@ class MainActivity : AppCompatActivity() {
         val varMap = mapOf(
             R.id.btnVarX to "x", R.id.btnVarY to "y",
             R.id.btnVarA to "a", R.id.btnVarM to "m",
-            R.id.btnVarT to "t", R.id.btnVarV to "v"
+            R.id.btnVarT to "t"
         )
         varMap.forEach { (id, v) ->
             bindKey(id) { casioDisplay.insertText(v) }
         }
 
-        bindKey(R.id.btnAc) {
+        bindKey(R.id.btnVarV) {
+            if (isShiftActive) {
+                casioDisplay.insertCombinatorics("A")
+                resetShift()
+            } else {
+                casioDisplay.insertCombinatorics("C")
+            }
+        }
+
+        bindKey(R.id.btnAc, isHeavy = true) {
             casioDisplay.clearAll()
             lastSolveResult = null
             btnCasSteps.visibility = View.GONE
@@ -672,15 +679,15 @@ class MainActivity : AppCompatActivity() {
             if (isShiftActive) resetShift()
         }
 
-        bindKey(R.id.btnDel) {
+        bindKey(R.id.btnDel, isHeavy = true) {
             casioDisplay.deleteAtCursor()
         }
 
-        bindKey(R.id.btnSolveEquation) {
+        bindKey(R.id.btnSolveEquation, isHeavy = true) {
             solveCurrentEquation()
         }
 
-        bindKey(R.id.btnExecute) {
+        bindKey(R.id.btnExecute, isHeavy = true) {
             val raw = casioDisplay.getRawExpression().trim()
             if (raw.contains("=")) {
                 solveCurrentEquation()
@@ -717,6 +724,9 @@ class MainActivity : AppCompatActivity() {
         setDualKeyText(R.id.btnPi, "CONST", "π", hintSizeSp = 8, mainSizeSp = 15, mainColor = whiteColor)
         setDualKeyText(R.id.btnOpenBracket, "x!", "(", hintSizeSp = 9, mainSizeSp = 15, mainColor = slateColor)
         setDualKeyText(R.id.btnCloseBracket, "%", ")", hintSizeSp = 9, mainSizeSp = 15, mainColor = slateColor)
+
+        // Сочетания C / Размещения A (Dual function button)
+        setDualKeyText(R.id.btnVarV, "A", "C", hintSizeSp = 9, mainSizeSp = 14, hintColor = hintColor, mainColor = blueColor)
     }
 
     private fun setDualKeyText(
@@ -1205,9 +1215,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateVariableChips(rawText: String) {
+        val vars = if (!rawText.contains("=")) emptyList() else extractVariables(rawText)
+        if (vars == lastVarChipList) return
+        lastVarChipList = vars
+
         layoutVarChips.removeAllViews()
-        val vars = extractVariables(rawText)
-        if (vars.isEmpty() || !rawText.contains("=")) return
+        if (vars.isEmpty()) return
 
         val isDark = ThemeManager.isDarkTheme(this)
         val label = TextView(this).apply {
@@ -1237,8 +1250,20 @@ class MainActivity : AppCompatActivity() {
                     setMargins(3, 0, 3, 0)
                 }
                 layoutParams = params
+                stateListAnimator = null
+                setOnTouchListener { vView, event ->
+                    when (event.action) {
+                        MotionEvent.ACTION_DOWN -> {
+                            triggerKeyHaptic(vView)
+                            vView.animate().scaleX(0.96f).scaleY(0.96f).setDuration(35).start()
+                        }
+                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                            vView.animate().scaleX(1.0f).scaleY(1.0f).setDuration(35).start()
+                        }
+                    }
+                    false
+                }
                 setOnClickListener {
-                    triggerKeyHaptic(it)
                     solveCurrentEquation(v)
                 }
             }
@@ -1250,11 +1275,12 @@ class MainActivity : AppCompatActivity() {
         val reserved = setOf(
             "sqrt", "cbrt", "sin", "cos", "tan", "asin", "acos", "atan", "log", "ln", "fact", "Ans", "pi", "π",
             "Nₐ", "Na", "c", "h", "g", "G", "k", "k_B", "kB", "R", "ε₀", "e₀", "eps0", "μ₀", "mu0",
-            "qₑ", "qe", "mₑ", "me", "mₚ", "mp", "e"
+            "qₑ", "qe", "mₑ", "me", "mₚ", "mp", "e", "comb", "perm"
         )
         val reservedWords = listOf(
             "asin", "acos", "atan", "cbrt", "sqrt", "fact", "sin", "cos", "tan", "log", "ln", "pi", "Ans",
-            "eps0", "mu0", "k_B", "kB", "Nₐ", "Na", "e₀", "ε₀", "μ₀", "mₑ", "me", "mₚ", "mp", "qₑ", "qe"
+            "eps0", "mu0", "k_B", "kB", "Nₐ", "Na", "e₀", "ε₀", "μ₀", "mₑ", "me", "mₚ", "mp", "qₑ", "qe",
+            "comb", "perm"
         )
 
         val resultVars = mutableListOf<String>()

@@ -27,6 +27,11 @@ class CasioDisplayView @JvmOverloads constructor(
         data class MixedFraction(val whole: MathContainer = MathContainer(), val num: MathContainer = MathContainer(), val den: MathContainer = MathContainer()) : MathItem()
         data class Sqrt(val inner: MathContainer, val degree: String? = null) : MathItem()
         data class Superscript(val exp: MathContainer) : MathItem()
+        data class Combinatorics(
+            val symbol: String, // "C" or "A"
+            val upper: MathContainer = MathContainer(),
+            val lower: MathContainer = MathContainer()
+        ) : MathItem()
     }
 
     class MathContainer(var parent: MathContainer? = null) {
@@ -70,6 +75,12 @@ class CasioDisplayView @JvmOverloads constructor(
                     is MathItem.Superscript -> {
                         val e = if (item.exp.isEmpty()) "1" else item.exp.toRawString()
                         sb.append("^($e)")
+                    }
+                    is MathItem.Combinatorics -> {
+                        val func = if (item.symbol == "A") "perm" else "comb"
+                        val l = item.lower.toRawString()
+                        val u = item.upper.toRawString()
+                        sb.append("$func(($l),($u))")
                     }
                 }
             }
@@ -305,6 +316,10 @@ class CasioDisplayView @JvmOverloads constructor(
                 is MathItem.Superscript -> {
                     autoCloseContainer(item.exp)
                 }
+                is MathItem.Combinatorics -> {
+                    autoCloseContainer(item.upper)
+                    autoCloseContainer(item.lower)
+                }
                 else -> {}
             }
         }
@@ -492,6 +507,16 @@ class CasioDisplayView @JvmOverloads constructor(
         notifyChange()
     }
 
+    fun insertCombinatorics(symbol: String) {
+        val upper = MathContainer(parent = currentContainer)
+        val lower = MathContainer(parent = currentContainer)
+        val item = MathItem.Combinatorics(symbol, upper, lower)
+        currentContainer.items.add(cursorIndex, item)
+        currentContainer = upper
+        cursorIndex = 0
+        notifyChange()
+    }
+
     private fun reparentItem(item: MathItem, newParent: MathContainer) {
         when (item) {
             is MathItem.Fraction -> {
@@ -508,6 +533,10 @@ class CasioDisplayView @JvmOverloads constructor(
             }
             is MathItem.Superscript -> {
                 item.exp.parent = newParent
+            }
+            is MathItem.Combinatorics -> {
+                item.upper.parent = newParent
+                item.lower.parent = newParent
             }
             else -> {}
         }
@@ -580,6 +609,15 @@ class CasioDisplayView @JvmOverloads constructor(
                     } else {
                         currentContainer = prev.exp
                         cursorIndex = prev.exp.items.size
+                    }
+                }
+                is MathItem.Combinatorics -> {
+                    if (prev.upper.isEmpty() && prev.lower.isEmpty()) {
+                        currentContainer.items.removeAt(cursorIndex - 1)
+                        cursorIndex--
+                    } else {
+                        currentContainer = prev.lower
+                        cursorIndex = prev.lower.items.size
                     }
                 }
                 else -> {
@@ -712,6 +750,39 @@ class CasioDisplayView @JvmOverloads constructor(
                                 }
                             }
                         }
+                        is MathItem.Combinatorics -> {
+                            if (item.upper === currentContainer) {
+                                if (item.upper.isEmpty()) {
+                                    if (item.lower.isEmpty()) {
+                                        parent.items.removeAt(i)
+                                        currentContainer = parent
+                                        cursorIndex = i
+                                        handled = true
+                                        break
+                                    } else {
+                                        currentContainer = item.lower
+                                        cursorIndex = item.lower.items.size
+                                        handled = true
+                                        break
+                                    }
+                                }
+                            } else if (item.lower === currentContainer) {
+                                if (item.lower.isEmpty()) {
+                                    if (item.upper.isEmpty()) {
+                                        parent.items.removeAt(i)
+                                        currentContainer = parent
+                                        cursorIndex = i
+                                        handled = true
+                                        break
+                                    } else {
+                                        currentContainer = item.upper
+                                        cursorIndex = item.upper.items.size
+                                        handled = true
+                                        break
+                                    }
+                                }
+                            }
+                        }
                         else -> {}
                     }
                 }
@@ -753,6 +824,10 @@ class CasioDisplayView @JvmOverloads constructor(
                 }
                 is MathItem.Sqrt -> if (it.inner === currentContainer) { currentContainer = parent; cursorIndex = i; return }
                 is MathItem.Superscript -> if (it.exp === currentContainer) { currentContainer = parent; cursorIndex = i; return }
+                is MathItem.Combinatorics -> {
+                    if (it.lower === currentContainer) { currentContainer = it.upper; cursorIndex = it.upper.items.size; return }
+                    if (it.upper === currentContainer) { currentContainer = parent; cursorIndex = i; return }
+                }
                 else -> {}
             }
         }
@@ -765,6 +840,7 @@ class CasioDisplayView @JvmOverloads constructor(
                 is MathItem.MixedFraction -> { currentContainer = prev.den; cursorIndex = prev.den.items.size }
                 is MathItem.Sqrt -> { currentContainer = prev.inner; cursorIndex = prev.inner.items.size }
                 is MathItem.Superscript -> { currentContainer = prev.exp; cursorIndex = prev.exp.items.size }
+                is MathItem.Combinatorics -> { currentContainer = prev.lower; cursorIndex = prev.lower.items.size }
                 else -> cursorIndex--
             }
         } else {
@@ -780,6 +856,7 @@ class CasioDisplayView @JvmOverloads constructor(
                 is MathItem.MixedFraction -> { currentContainer = next.whole; cursorIndex = 0 }
                 is MathItem.Sqrt -> { currentContainer = next.inner; cursorIndex = 0 }
                 is MathItem.Superscript -> { currentContainer = next.exp; cursorIndex = 0 }
+                is MathItem.Combinatorics -> { currentContainer = next.upper; cursorIndex = 0 }
                 else -> cursorIndex++
             }
         } else {
@@ -797,6 +874,10 @@ class CasioDisplayView @JvmOverloads constructor(
                     }
                     is MathItem.Sqrt -> if (it.inner === currentContainer) { currentContainer = parent; cursorIndex = i + 1; resetCursorBlink(); return }
                     is MathItem.Superscript -> if (it.exp === currentContainer) { currentContainer = parent; cursorIndex = i + 1; resetCursorBlink(); return }
+                    is MathItem.Combinatorics -> {
+                        if (it.upper === currentContainer) { currentContainer = it.lower; cursorIndex = 0; resetCursorBlink(); return }
+                        if (it.lower === currentContainer) { currentContainer = parent; cursorIndex = i + 1; resetCursorBlink(); return }
+                    }
                     else -> {}
                 }
             }
@@ -814,6 +895,9 @@ class CasioDisplayView @JvmOverloads constructor(
                 if (it is MathItem.MixedFraction && (it.den === currentContainer || it.whole === currentContainer)) {
                     currentContainer = it.num; cursorIndex = it.num.items.size; resetCursorBlink(); return
                 }
+                if (it is MathItem.Combinatorics && it.lower === currentContainer) {
+                    currentContainer = it.upper; cursorIndex = it.upper.items.size; resetCursorBlink(); return
+                }
             }
         }
         val frac = currentContainer.items.filterIsInstance<MathItem.Fraction>().firstOrNull()
@@ -823,6 +907,10 @@ class CasioDisplayView @JvmOverloads constructor(
         val mf = currentContainer.items.filterIsInstance<MathItem.MixedFraction>().firstOrNull()
         if (mf != null) {
             currentContainer = mf.num; cursorIndex = mf.num.items.size; resetCursorBlink(); return
+        }
+        val comb = currentContainer.items.filterIsInstance<MathItem.Combinatorics>().firstOrNull()
+        if (comb != null) {
+            currentContainer = comb.upper; cursorIndex = comb.upper.items.size; resetCursorBlink(); return
         }
     }
 
@@ -836,6 +924,9 @@ class CasioDisplayView @JvmOverloads constructor(
                 if (it is MathItem.MixedFraction && (it.num === currentContainer || it.whole === currentContainer)) {
                     currentContainer = it.den; cursorIndex = it.den.items.size; resetCursorBlink(); return
                 }
+                if (it is MathItem.Combinatorics && it.upper === currentContainer) {
+                    currentContainer = it.lower; cursorIndex = it.lower.items.size; resetCursorBlink(); return
+                }
             }
         }
         val frac = currentContainer.items.filterIsInstance<MathItem.Fraction>().firstOrNull()
@@ -845,6 +936,10 @@ class CasioDisplayView @JvmOverloads constructor(
         val mf = currentContainer.items.filterIsInstance<MathItem.MixedFraction>().firstOrNull()
         if (mf != null) {
             currentContainer = mf.den; cursorIndex = mf.den.items.size; resetCursorBlink(); return
+        }
+        val comb = currentContainer.items.filterIsInstance<MathItem.Combinatorics>().firstOrNull()
+        if (comb != null) {
+            currentContainer = comb.lower; cursorIndex = comb.lower.items.size; resetCursorBlink(); return
         }
     }
 
@@ -1101,6 +1196,21 @@ class CasioDisplayView @JvmOverloads constructor(
                     continue
                 }
             }
+            if (s.startsWith("comb((", i) || s.startsWith("perm((", i)) {
+                val match = findCombinatoricsMatch(s, i)
+                if (match != null) {
+                    val item = MathItem.Combinatorics(
+                        match.symbol,
+                        upper = MathContainer(parent = target),
+                        lower = MathContainer(parent = target)
+                    )
+                    populateContainerFromString(match.upperStr, item.upper)
+                    populateContainerFromString(match.lowerStr, item.lower)
+                    target.items.add(item)
+                    i = match.nextIdx
+                    continue
+                }
+            }
             val ch = s[i]
             val displayCh = when (ch) {
                 '*' -> "·"
@@ -1139,6 +1249,27 @@ class CasioDisplayView @JvmOverloads constructor(
         val numStr = s.substring(numOpenIdx + 1, numCloseIdx)
         val denStr = s.substring(denOpenIdx + 1, denCloseIdx)
         return Triple(numStr, denStr, denCloseIdx + 2)
+    }
+
+    private data class CombMatch(val symbol: String, val lowerStr: String, val upperStr: String, val nextIdx: Int)
+
+    private fun findCombinatoricsMatch(s: String, startIdx: Int): CombMatch? {
+        val isPerm = s.startsWith("perm((", startIdx)
+        val isComb = s.startsWith("comb((", startIdx)
+        if (!isPerm && !isComb) return null
+        val symbol = if (isPerm) "A" else "C"
+        val prefixLen = 4
+        val lowerOpenIdx = startIdx + prefixLen + 1
+        val lowerCloseIdx = findMatchingParen(s, lowerOpenIdx)
+        if (lowerCloseIdx == -1 || lowerCloseIdx + 2 >= s.length) return null
+        if (s[lowerCloseIdx + 1] != ',' || s[lowerCloseIdx + 2] != '(') return null
+        val upperOpenIdx = lowerCloseIdx + 2
+        val upperCloseIdx = findMatchingParen(s, upperOpenIdx)
+        if (upperCloseIdx == -1 || upperCloseIdx + 1 >= s.length) return null
+        if (s[upperCloseIdx + 1] != ')') return null
+        val lowerStr = s.substring(lowerOpenIdx + 1, lowerCloseIdx)
+        val upperStr = s.substring(upperOpenIdx + 1, upperCloseIdx)
+        return CombMatch(symbol, lowerStr, upperStr, upperCloseIdx + 2)
     }
 
     // --- РАСЧЁТ РАЗМЕРОВ И ОТРИСОВКА ---
@@ -1198,6 +1329,17 @@ class CasioDisplayView @JvmOverloads constructor(
                     totalW += expM.width + 2f * density
                     val supAscent = 10f * density + expM.ascent
                     if (supAscent > maxAscent) maxAscent = supAscent
+                }
+                is MathItem.Combinatorics -> {
+                    val symW = paint.measureText(item.symbol)
+                    val upperM = measureContainer(item.upper, isSuperscript = true)
+                    val lowerM = measureContainer(item.lower, isSuperscript = true)
+                    val itemW = symW + max(upperM.width, lowerM.width) + 2f * density
+                    totalW += itemW + 2f * density
+                    val combAscent = max(maxAscent, 8f * density + upperM.ascent)
+                    val combDescent = max(maxDescent, 6f * density + lowerM.descent)
+                    if (combAscent > maxAscent) maxAscent = combAscent
+                    if (combDescent > maxDescent) maxDescent = combDescent
                 }
             }
         }
@@ -1267,6 +1409,17 @@ class CasioDisplayView @JvmOverloads constructor(
                     val inExp = getCursorXInContainer(item.exp, currentX, isSuperscript = true)
                     if (inExp != null) return inExp
                     currentX += expM.width + 2f * density
+                }
+                is MathItem.Combinatorics -> {
+                    val symW = paint.measureText(item.symbol)
+                    val upperM = measureContainer(item.upper, isSuperscript = true)
+                    val lowerM = measureContainer(item.lower, isSuperscript = true)
+                    val itemW = symW + max(upperM.width, lowerM.width) + 2f * density
+                    val inUpper = getCursorXInContainer(item.upper, currentX + symW, isSuperscript = true)
+                    if (inUpper != null) return inUpper
+                    val inLower = getCursorXInContainer(item.lower, currentX + symW, isSuperscript = true)
+                    if (inLower != null) return inLower
+                    currentX += itemW + 2f * density
                 }
             }
         }
@@ -1543,6 +1696,22 @@ class CasioDisplayView @JvmOverloads constructor(
                     val expBaseY = baselineY - 10f * density
                     drawContainer(canvas, item.exp, currentX, expBaseY, isSuperscript = true)
                     currentX += expM.width + 2f * density
+                }
+                is MathItem.Combinatorics -> {
+                    val symW = paint.measureText(item.symbol)
+                    val upperM = measureContainer(item.upper, isSuperscript = true)
+                    val lowerM = measureContainer(item.lower, isSuperscript = true)
+                    val itemW = symW + max(upperM.width, lowerM.width) + 2f * density
+
+                    canvas.drawText(item.symbol, currentX, baselineY, paint)
+
+                    val upperBaseY = baselineY - 10f * density
+                    val lowerBaseY = baselineY + 6f * density
+
+                    drawContainer(canvas, item.upper, currentX + symW, upperBaseY, isSuperscript = true)
+                    drawContainer(canvas, item.lower, currentX + symW, lowerBaseY, isSuperscript = true)
+
+                    currentX += itemW + 2f * density
                 }
             }
         }
@@ -1821,6 +1990,25 @@ class CasioDisplayView @JvmOverloads constructor(
                         return hitTestContainer(item.exp, currentX, expBaseY, tapX, tapY, isSuperscript = true)
                     }
                     currentX += expW
+                }
+                is MathItem.Combinatorics -> {
+                    val symW = paint.measureText(item.symbol)
+                    val upperM = measureContainer(item.upper, isSuperscript = true)
+                    val lowerM = measureContainer(item.lower, isSuperscript = true)
+                    val itemW = symW + max(upperM.width, lowerM.width) + 2f * density
+                    val totalItemW = itemW + 2f * density
+
+                    if (tapX < currentX) {
+                        return Pair(container, i)
+                    }
+                    if (tapX <= currentX + totalItemW) {
+                        return if (tapY < baselineY) {
+                            hitTestContainer(item.upper, currentX + symW, baselineY - 10f * density, tapX, tapY, isSuperscript = true)
+                        } else {
+                            hitTestContainer(item.lower, currentX + symW, baselineY + 6f * density, tapX, tapY, isSuperscript = true)
+                        }
+                    }
+                    currentX += totalItemW
                 }
             }
         }

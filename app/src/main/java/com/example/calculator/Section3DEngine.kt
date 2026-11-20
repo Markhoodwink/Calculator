@@ -104,7 +104,7 @@ object Section3DEngine {
             Edge3D(4, 5), Edge3D(5, 6), Edge3D(6, 7), Edge3D(7, 4), // Top A1B1C1D1
             Edge3D(0, 4), Edge3D(1, 5), Edge3D(2, 6), Edge3D(3, 7)  // Vertical
         )
-        val faces = listOf(
+        val rawFaces = listOf(
             Face3D(listOf(0, 3, 2, 1)), // Bottom
             Face3D(listOf(4, 5, 6, 7)), // Top
             Face3D(listOf(0, 1, 5, 4)), // Front
@@ -112,6 +112,7 @@ object Section3DEngine {
             Face3D(listOf(2, 3, 7, 6)), // Back
             Face3D(listOf(3, 0, 4, 7))  // Left
         )
+        val faces = ensureOutwardFaces(vertices, rawFaces)
         return Polyhedron3D("cube", "Куб ABCDA₁B₁C₁D₁", "Куб", vertices, labels, edges, faces)
     }
 
@@ -139,7 +140,7 @@ object Section3DEngine {
             Edge3D(4, 5), Edge3D(5, 6), Edge3D(6, 7), Edge3D(7, 4),
             Edge3D(0, 4), Edge3D(1, 5), Edge3D(2, 6), Edge3D(3, 7)
         )
-        val faces = listOf(
+        val rawFaces = listOf(
             Face3D(listOf(0, 3, 2, 1)),
             Face3D(listOf(4, 5, 6, 7)),
             Face3D(listOf(0, 1, 5, 4)),
@@ -147,6 +148,7 @@ object Section3DEngine {
             Face3D(listOf(2, 3, 7, 6)),
             Face3D(listOf(3, 0, 4, 7))
         )
+        val faces = ensureOutwardFaces(vertices, rawFaces)
         return Polyhedron3D("box", "Параллелепипед ABCDA₁B₁C₁D₁", "Параллелепипед", vertices, labels, edges, faces)
     }
 
@@ -166,12 +168,13 @@ object Section3DEngine {
             Edge3D(0, 1), Edge3D(0, 2), Edge3D(0, 3), // Slant
             Edge3D(1, 2), Edge3D(2, 3), Edge3D(3, 1)  // Base
         )
-        val faces = listOf(
+        val rawFaces = listOf(
             Face3D(listOf(1, 2, 3)), // Base
             Face3D(listOf(0, 1, 2)), // SAB
             Face3D(listOf(0, 2, 3)), // SBC
             Face3D(listOf(0, 3, 1))  // SCA
         )
+        val faces = ensureOutwardFaces(vertices, rawFaces)
         return Polyhedron3D("tetrahedron", "Правильный тетраэдр SABC", "Тетраэдр", vertices, labels, edges, faces)
     }
 
@@ -188,13 +191,14 @@ object Section3DEngine {
             Edge3D(1, 2), Edge3D(2, 3), Edge3D(3, 4), Edge3D(4, 1), // Base
             Edge3D(0, 1), Edge3D(0, 2), Edge3D(0, 3), Edge3D(0, 4)  // Slant
         )
-        val faces = listOf(
+        val rawFaces = listOf(
             Face3D(listOf(1, 2, 3, 4)),
             Face3D(listOf(0, 1, 2)),
             Face3D(listOf(0, 2, 3)),
             Face3D(listOf(0, 3, 4)),
             Face3D(listOf(0, 4, 1))
         )
+        val faces = ensureOutwardFaces(vertices, rawFaces)
         return Polyhedron3D("pyramid4", "Правильная 4-угольная пирамида SABCD", "4-угольная пирамида", vertices, labels, edges, faces)
     }
 
@@ -214,13 +218,14 @@ object Section3DEngine {
             Edge3D(3, 4), Edge3D(4, 5), Edge3D(5, 3), // Top
             Edge3D(0, 3), Edge3D(1, 4), Edge3D(2, 5)  // Vertical
         )
-        val faces = listOf(
+        val rawFaces = listOf(
             Face3D(listOf(0, 2, 1)),
             Face3D(listOf(3, 4, 5)),
             Face3D(listOf(0, 1, 4, 3)),
             Face3D(listOf(1, 2, 5, 4)),
             Face3D(listOf(2, 0, 3, 5))
         )
+        val faces = ensureOutwardFaces(vertices, rawFaces)
         return Polyhedron3D("prism3", "Правильная треугольная призма ABCA₁B₁C₁", "3-угольная призма", vertices, labels, edges, faces)
     }
 
@@ -245,14 +250,149 @@ object Section3DEngine {
             edges.add(Edge3D(i, i + 6))
         }
 
-        val faces = mutableListOf<Face3D>()
-        faces.add(Face3D(listOf(0, 5, 4, 3, 2, 1))) // Bottom
-        faces.add(Face3D(listOf(6, 7, 8, 9, 10, 11))) // Top
+        val rawFaces = mutableListOf<Face3D>()
+        rawFaces.add(Face3D(listOf(0, 5, 4, 3, 2, 1))) // Bottom
+        rawFaces.add(Face3D(listOf(6, 7, 8, 9, 10, 11))) // Top
         for (i in 0..5) {
-            faces.add(Face3D(listOf(i, (i + 1) % 6, (i + 1) % 6 + 6, i + 6)))
+            rawFaces.add(Face3D(listOf(i, (i + 1) % 6, (i + 1) % 6 + 6, i + 6)))
         }
 
+        val faces = ensureOutwardFaces(verts, rawFaces)
+
         return Polyhedron3D("prism6", "Правильная 6-угольная призма ABCDEFA₁B₁C₁D₁E₁F₁", "6-угольная призма", verts, labels, edges, faces)
+    }
+
+    fun ensureOutwardFaces(vertices: List<Vec3>, faces: List<Face3D>): List<Face3D> {
+        val polyCenter = Vec3(
+            vertices.sumOf { it.x } / vertices.size,
+            vertices.sumOf { it.y } / vertices.size,
+            vertices.sumOf { it.z } / vertices.size
+        )
+        return faces.map { face ->
+            val indices = face.vertexIndices
+            val v0 = vertices[indices[0]]
+            val v1 = vertices[indices[1]]
+            val v2 = vertices[indices[2]]
+            val normal = (v1 - v0).cross(v2 - v0)
+
+            val faceCenter = Vec3(
+                indices.sumOf { vertices[it].x } / indices.size,
+                indices.sumOf { vertices[it].y } / indices.size,
+                indices.sumOf { vertices[it].z } / indices.size
+            )
+            val outwardDir = faceCenter - polyCenter
+            if (normal.dot(outwardDir) < 0.0) {
+                Face3D(indices.reversed())
+            } else {
+                face
+            }
+        }
+    }
+
+    fun getAdjacentFacesForEdge(poly: Polyhedron3D, edge: Edge3D): List<Int> {
+        val u = edge.v1
+        val v = edge.v2
+        val list = mutableListOf<Int>()
+        poly.faces.forEachIndexed { fIdx, face ->
+            if (face.vertexIndices.contains(u) && face.vertexIndices.contains(v)) {
+                list.add(fIdx)
+            }
+        }
+        return list
+    }
+
+    fun rotateToCameraSpace(v: Vec3, cameraYaw: Double, cameraPitch: Double): Vec3 {
+        val yawRad = Math.toRadians(cameraYaw)
+        val pitchRad = Math.toRadians(cameraPitch)
+
+        val cosY = cos(yawRad)
+        val sinY = sin(yawRad)
+        val cosP = cos(pitchRad)
+        val sinP = sin(pitchRad)
+
+        val x1 = v.x * cosY - v.y * sinY
+        val y1 = v.x * sinY + v.y * cosY
+        val z1 = v.z
+
+        val x2 = x1
+        val y2 = y1 * cosP - z1 * sinP
+        val z2 = y1 * sinP + z1 * cosP
+
+        return Vec3(x2, y2, z2)
+    }
+
+    fun isFaceFrontFacing(
+        face: Face3D,
+        vertices: List<Vec3>,
+        cameraYaw: Double,
+        cameraPitch: Double,
+        cameraDist: Double = 4.0
+    ): Boolean {
+        val rotatedFaceVerts = face.vertexIndices.map { rotateToCameraSpace(vertices[it], cameraYaw, cameraPitch) }
+        val rv0 = rotatedFaceVerts[0]
+        val rv1 = rotatedFaceVerts[1]
+        val rv2 = rotatedFaceVerts[2]
+
+        val nCam = (rv1 - rv0).cross(rv2 - rv0)
+
+        val cCam = Vec3(
+            rotatedFaceVerts.sumOf { it.x } / rotatedFaceVerts.size,
+            rotatedFaceVerts.sumOf { it.y } / rotatedFaceVerts.size,
+            rotatedFaceVerts.sumOf { it.z } / rotatedFaceVerts.size
+        )
+
+        val camPos = Vec3(0.0, -cameraDist, 0.0)
+        val viewVec = camPos - cCam
+
+        return nCam.dot(viewVec) > 0.0
+    }
+
+    fun isEdgeVisible(poly: Polyhedron3D, edge: Edge3D, visibleFaces: BooleanArray): Boolean {
+        val adjacent = getAdjacentFacesForEdge(poly, edge)
+        if (adjacent.isEmpty()) return true
+        return adjacent.any { visibleFaces[it] }
+    }
+
+    fun findFacesForSegment(segmentStart: Vec3, segmentEnd: Vec3, poly: Polyhedron3D): List<Int> {
+        if (segmentStart.distanceTo(segmentEnd) < 1e-9) return emptyList()
+        val mid = (segmentStart + segmentEnd) * 0.5
+        val faces = mutableListOf<Int>()
+        poly.faces.forEachIndexed { fIdx, face ->
+            val fVerts = face.vertexIndices.map { poly.vertices[it] }
+            if (fVerts.size >= 3) {
+                val nF = (fVerts[1] - fVerts[0]).cross(fVerts[2] - fVerts[0]).normalized()
+                val distToPlane = abs((mid - fVerts[0]).dot(nF))
+                if (distToPlane < 1e-4) {
+                    var isInsideOrOnBorder = true
+                    val count = fVerts.size
+                    for (i in 0 until count) {
+                        val a = fVerts[i]
+                        val b = fVerts[(i + 1) % count]
+                        val edgeDir = b - a
+                        val nEdge = edgeDir.cross(nF)
+                        if ((mid - a).dot(nEdge) > 1e-5) {
+                            isInsideOrOnBorder = false
+                            break
+                        }
+                    }
+                    if (isInsideOrOnBorder) {
+                        faces.add(fIdx)
+                    }
+                }
+            }
+        }
+        return faces
+    }
+
+    fun isSegmentVisible(
+        segmentStart: Vec3,
+        segmentEnd: Vec3,
+        poly: Polyhedron3D,
+        visibleFaces: BooleanArray
+    ): Boolean {
+        val faces = findFacesForSegment(segmentStart, segmentEnd, poly)
+        if (faces.isEmpty()) return true
+        return faces.any { visibleFaces[it] }
     }
 
     fun generateSnapPoints(poly: Polyhedron3D): List<SnapPoint3D> {

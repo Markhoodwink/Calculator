@@ -62,40 +62,33 @@ class UnitConverterManager(
     }
 
     private fun setupListeners() {
-        btnConverterClear?.setOnClickListener { v ->
-            onHaptic(v)
+        btnConverterClear?.bindCrispKey(isHeavy = true) {
             inputValue = "1"
             recalculate()
         }
 
-        layoutCategorySelector.setOnClickListener { v ->
-            onHaptic(v)
+        layoutCategorySelector.bindCrispKey(isHeavy = false) {
             showCategorySelectionBottomSheet()
         }
 
-        btnFromUnit.setOnClickListener { v ->
-            onHaptic(v)
+        btnFromUnit.bindCrispKey(isHeavy = false) {
             showUnitSelectionDialog(isFrom = true)
         }
 
-        btnToUnit.setOnClickListener { v ->
-            onHaptic(v)
+        btnToUnit.bindCrispKey(isHeavy = false) {
             showUnitSelectionDialog(isFrom = false)
         }
 
-        btnSwapUnits.setOnClickListener { v ->
-            onHaptic(v)
+        btnSwapUnits.bindCrispKey(isHeavy = true) {
             swapUnits()
         }
 
-        btnCopyConverted.setOnClickListener { v ->
-            onHaptic(v)
+        btnCopyConverted.bindCrispKey(isHeavy = true) {
             copyToClipboard(tvToValue.text.toString())
             Toast.makeText(rootLayout.context, "Скопировано: ${tvToValue.text}", Toast.LENGTH_SHORT).show()
         }
 
-        btnSendToCalc.setOnClickListener { v ->
-            onHaptic(v)
+        btnSendToCalc.bindCrispKey(isHeavy = true) {
             onSendToCalculator(tvToValue.text.toString())
         }
 
@@ -108,8 +101,8 @@ class UnitConverterManager(
         )
 
         numpadMap.forEach { (id, key) ->
-            rootLayout.findViewById<Button>(id)?.setOnClickListener { v ->
-                onHaptic(v)
+            val isHeavy = (key == "⌫" || key == "C")
+            rootLayout.findViewById<Button>(id)?.bindCrispKey(isHeavy = isHeavy) {
                 onNumpadKey(key)
             }
         }
@@ -246,8 +239,7 @@ class UnitConverterManager(
                     }
                 }
 
-                setOnClickListener { v ->
-                    onHaptic(v)
+                bindCrispKey(isHeavy = false) {
                     selectCategory(cat.id)
                     dialog.dismiss()
                 }
@@ -391,8 +383,7 @@ class UnitConverterManager(
                     setStroke((1 * dp).toInt(), if (isDark) Color.parseColor("#0284C7") else Color.parseColor("#38BDF8"))
                 }
 
-                setOnClickListener { v ->
-                    onHaptic(v)
+                bindCrispKey(isHeavy = false) {
                     fromUnitId = preset.fromUnitId
                     toUnitId = preset.toUnitId
                     recalculate()
@@ -540,8 +531,7 @@ class UnitConverterManager(
                     }
                 }
 
-                setOnClickListener { v ->
-                    onHaptic(v)
+                bindCrispKey(isHeavy = false) {
                     toUnitId = item.unit.id
                     copyToClipboard(item.formattedValue)
                     Toast.makeText(rootLayout.context, "Скопировано: ${item.formattedValue} ${item.unit.name}", Toast.LENGTH_SHORT).show()

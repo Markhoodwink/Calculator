@@ -1,5 +1,7 @@
 package com.example.calculator
 
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -21,21 +23,20 @@ class ConstantsBottomSheet(
     )
 
     private val constants = listOf(
-        PhysicalConstant("e", "Основание нат. логарифма", "2.71828182846", ""),
-        PhysicalConstant("g", "Ускорение своб. падения", "9.80665", "м/с²"),
-        PhysicalConstant("c", "Скорость света", "299792458", "м/с"),
-        PhysicalConstant("G", "Гравитационная постоянная", "6.6743e-11", "Н·м²/кг²"),
-        PhysicalConstant("h", "Постоянная Планка", "6.62607015e-34", "Дж·с"),
-        PhysicalConstant("Nₐ", "Число Авогадро", "6.02214076e23", "моль⁻¹"),
-        PhysicalConstant("k", "Постоянная Больцмана", "1.380649e-23", "Дж/К"),
-        PhysicalConstant("k_B", "Постоянная Больцмана (k_B)", "1.380649e-23", "Дж/К"),
-        PhysicalConstant("R", "Газовая постоянная", "8.314462618", "Дж/(моль·К)"),
-        PhysicalConstant("ε₀", "Электрическая постоянная", "8.8541878128e-12", "Ф/м"),
-        PhysicalConstant("e₀", "Электрическая постоянная (e₀)", "8.8541878128e-12", "Ф/м"),
-        PhysicalConstant("μ₀", "Магнитная постоянная", "1.25663706212e-6", "Гн/м"),
-        PhysicalConstant("qₑ", "Элементарный заряд", "1.602176634e-19", "Кл"),
-        PhysicalConstant("mₑ", "Масса электрона", "9.1093837e-31", "кг"),
-        PhysicalConstant("mₚ", "Масса протона", "1.67262192e-27", "кг")
+        PhysicalConstant("g", "Ускорение своб. падения", "10", "м/с²"),
+        PhysicalConstant("R", "Газовая постоянная", "8.31", "Дж/(моль·К)"),
+        PhysicalConstant("k", "Коэф. в законе Кулона", "9 · 10⁹", "Н·м²/Кл²"),
+        PhysicalConstant("qₑ", "Элементарный заряд", "1.6 · 10⁻¹⁹", "Кл"),
+        PhysicalConstant("c", "Скорость света в вакууме", "3 · 10⁸", "м/с"),
+        PhysicalConstant("Nₐ", "Постоянная Авогадро", "6 · 10²³", "моль⁻¹"),
+        PhysicalConstant("k_B", "Постоянная Больцмана", "1.38 · 10⁻²³", "Дж/К"),
+        PhysicalConstant("h", "Постоянная Планка", "6.6 · 10⁻³⁴", "Дж·с"),
+        PhysicalConstant("G", "Гравитационная постоянная", "6.7 · 10⁻¹¹", "Н·м²/кг²"),
+        PhysicalConstant("mₑ", "Масса электрона", "9.1 · 10⁻³¹", "кг"),
+        PhysicalConstant("mₚ", "Масса протона", "1.67 · 10⁻²⁷", "кг"),
+        PhysicalConstant("ε₀", "Электрическая постоянная", "8.85 · 10⁻¹²", "Ф/м"),
+        PhysicalConstant("μ₀", "Магнитная постоянная", "1.26 · 10⁻⁶", "Гн/м"),
+        PhysicalConstant("e", "Число Эйлера (осн. ln)", "2.71828182846", "")
     )
 
     override fun onCreateView(
@@ -46,12 +47,49 @@ class ConstantsBottomSheet(
         return inflater.inflate(R.layout.bottom_sheet_constants, container, false)
     }
 
+    override fun onStart() {
+        super.onStart()
+        dialog?.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)?.background = null
+    }
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
+        dialog?.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)?.background = null
+
+        val context = requireContext()
+        val dp = resources.displayMetrics.density
+        val isDark = ThemeManager.isDarkTheme(context)
+
+        val rootLayout = view.findViewById<View>(R.id.layoutBottomSheetConstants) ?: view
+        val dragHandle = view.findViewById<View>(R.id.dragHandleConstants)
+        val tvTitle = view.findViewById<TextView>(R.id.tvConstantsTitle)
+        val tvSubtitle = view.findViewById<TextView>(R.id.tvConstantsSubtitle)
+        val divider = view.findViewById<View>(R.id.dividerConstants)
         val rv = view.findViewById<RecyclerView>(R.id.rvConstants) ?: return
-        rv.layoutManager = LinearLayoutManager(requireContext())
-        rv.adapter = ConstantsAdapter(constants) { constant ->
+
+        rootLayout.background = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadii = floatArrayOf(
+                18f * dp, 18f * dp,
+                18f * dp, 18f * dp,
+                0f, 0f, 0f, 0f
+            )
+            setColor(if (isDark) ThemeManager.COLOR_DARK_PANEL else ThemeManager.COLOR_LIGHT_PANEL)
+        }
+
+        dragHandle?.background = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = 2f * dp
+            setColor(if (isDark) Color.parseColor("#475569") else Color.parseColor("#CBD5E1"))
+        }
+
+        tvTitle?.setTextColor(if (isDark) ThemeManager.COLOR_DARK_TEXT_PRIMARY else ThemeManager.COLOR_LIGHT_TEXT_PRIMARY)
+        tvSubtitle?.setTextColor(if (isDark) ThemeManager.COLOR_DARK_TEXT_SECONDARY else ThemeManager.COLOR_LIGHT_TEXT_SECONDARY)
+        divider?.setBackgroundColor(if (isDark) ThemeManager.COLOR_DARK_BORDER else ThemeManager.COLOR_LIGHT_BORDER)
+
+        rv.layoutManager = LinearLayoutManager(context)
+        rv.adapter = ConstantsAdapter(constants, isDark) { constant ->
             onConstantSelected(constant.symbol)
             dismiss()
         }
@@ -59,6 +97,7 @@ class ConstantsBottomSheet(
 
     private class ConstantsAdapter(
         private val items: List<PhysicalConstant>,
+        private val isDark: Boolean,
         private val onClick: (PhysicalConstant) -> Unit
     ) : RecyclerView.Adapter<ConstantsAdapter.ViewHolder>() {
 
@@ -77,10 +116,24 @@ class ConstantsBottomSheet(
 
         override fun onBindViewHolder(holder: ViewHolder, position: Int) {
             val item = items[position]
+            val dp = holder.itemView.context.resources.displayMetrics.density
+
             holder.tvSymbol.text = item.symbol
             holder.tvName.text = item.name
             holder.tvUnit.text = item.unit
             holder.tvValue.text = item.value
+
+            holder.layoutItem.background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = 8f * dp
+                setColor(if (isDark) Color.parseColor("#0F172A") else Color.parseColor("#F8FAFC"))
+                setStroke((1 * dp).toInt(), if (isDark) ThemeManager.COLOR_DARK_BORDER else ThemeManager.COLOR_LIGHT_BORDER)
+            }
+
+            holder.tvSymbol.setTextColor(if (isDark) Color.parseColor("#38BDF8") else Color.parseColor("#0284C7"))
+            holder.tvName.setTextColor(if (isDark) ThemeManager.COLOR_DARK_TEXT_PRIMARY else ThemeManager.COLOR_LIGHT_TEXT_PRIMARY)
+            holder.tvUnit.setTextColor(if (isDark) ThemeManager.COLOR_DARK_TEXT_SECONDARY else ThemeManager.COLOR_LIGHT_TEXT_SECONDARY)
+            holder.tvValue.setTextColor(if (isDark) Color.parseColor("#34D399") else Color.parseColor("#059669"))
 
             holder.layoutItem.setOnClickListener {
                 onClick(item)

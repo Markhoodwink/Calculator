@@ -43,7 +43,7 @@ object DesmosPlotCompiler {
         val result = mutableSetOf<String>()
         fun traverse(node: CasEngine.Node) {
             when (node) {
-                is CasEngine.Node.Num -> {}
+                is CasEngine.Node.Num, is CasEngine.Node.Approx -> {}
                 is CasEngine.Node.Variable -> {
                     val name = node.name
                     val lower = name.lowercase()
@@ -58,6 +58,7 @@ object DesmosPlotCompiler {
                 is CasEngine.Node.Pow -> { traverse(node.base); traverse(node.exp) }
                 is CasEngine.Node.Sqrt -> traverse(node.inner)
                 is CasEngine.Node.Func -> traverse(node.arg)
+                is CasEngine.Node.Comb -> { traverse(node.n); traverse(node.k) }
             }
         }
         traverse(ast)
@@ -176,6 +177,7 @@ object DesmosPlotCompiler {
     ): Double {
         return when (node) {
             is CasEngine.Node.Num -> node.value.toDouble()
+            is CasEngine.Node.Approx -> node.value
             is CasEngine.Node.Variable -> {
                 val constVal = CasEngine.getConstantValue(node.name)
                 if (constVal != null) {
@@ -233,6 +235,20 @@ object DesmosPlotCompiler {
                         }
                     }
                     else -> Double.NaN
+                }
+            }
+            is CasEngine.Node.Comb -> {
+                val nD = evalNode(node.n, xVal, yVal, params)
+                val kD = evalNode(node.k, xVal, yVal, params)
+                if (nD.isNaN() || kD.isNaN() || nD < 0.0 || kD < 0.0 || nD % 1.0 != 0.0 || kD % 1.0 != 0.0 || kD > nD) {
+                    Double.NaN
+                } else {
+                    val resNode = CasEngine().evalCombinatorics(node.isPerm, nD.toLong(), kD.toLong())
+                    when (resNode) {
+                        is CasEngine.Node.Num -> resNode.value.toDouble()
+                        is CasEngine.Node.Approx -> resNode.value
+                        else -> Double.NaN
+                    }
                 }
             }
         }

@@ -66,8 +66,7 @@ class MatrixModeManager(
         initKeypad()
         initOperations()
 
-        btnMatSize2x2.setOnClickListener {
-            onHaptic(it)
+        btnMatSize2x2.bindCrispKey(isHeavy = false) {
             if (activeSize != 2) {
                 saveCurrentGridToMemory()
                 activeSize = 2
@@ -76,8 +75,7 @@ class MatrixModeManager(
             }
         }
 
-        btnMatSize3x3.setOnClickListener {
-            onHaptic(it)
+        btnMatSize3x3.bindCrispKey(isHeavy = false) {
             if (activeSize != 3) {
                 saveCurrentGridToMemory()
                 activeSize = 3
@@ -86,8 +84,7 @@ class MatrixModeManager(
             }
         }
 
-        tabMatA.setOnClickListener {
-            onHaptic(it)
+        tabMatA.bindCrispKey(isHeavy = false) {
             if (activeMatrix != MatId.A) {
                 saveCurrentGridToMemory()
                 activeMatrix = MatId.A
@@ -96,8 +93,7 @@ class MatrixModeManager(
             }
         }
 
-        tabMatB.setOnClickListener {
-            onHaptic(it)
+        tabMatB.bindCrispKey(isHeavy = false) {
             if (activeMatrix != MatId.B) {
                 saveCurrentGridToMemory()
                 activeMatrix = MatId.B
@@ -106,8 +102,7 @@ class MatrixModeManager(
             }
         }
 
-        btnMatrixClear.setOnClickListener {
-            onHaptic(it)
+        btnMatrixClear.bindCrispKey(isHeavy = true) {
             val data = getData(activeMatrix, activeSize)
             for (r in 0 until activeSize) {
                 for (c in 0 until activeSize) {
@@ -121,8 +116,7 @@ class MatrixModeManager(
             tvMatrixResultTitle.text = "Результат:"
         }
 
-        btnUseResultAsA.setOnClickListener {
-            onHaptic(it)
+        btnUseResultAsA.bindCrispKey(isHeavy = true) {
             val res = lastResult
             if (res is MatrixResult.MatrixValue) {
                 val n = res.rows.size
@@ -142,8 +136,7 @@ class MatrixModeManager(
             }
         }
 
-        btnCopyMatrixResult.setOnClickListener {
-            onHaptic(it)
+        btnCopyMatrixResult.bindCrispKey(isHeavy = true) {
             val res = lastResult
             if (res != null) {
                 val textToCopy = when (res) {
@@ -331,38 +324,31 @@ class MatrixModeManager(
     }
 
     private fun initOperations() {
-        btnMatDet.setOnClickListener {
-            onHaptic(it)
+        btnMatDet.bindCrispKey(isHeavy = true) {
             computeDeterminant()
         }
 
-        btnMatInv.setOnClickListener {
-            onHaptic(it)
+        btnMatInv.bindCrispKey(isHeavy = true) {
             computeInverse()
         }
 
-        btnMatTrans.setOnClickListener {
-            onHaptic(it)
+        btnMatTrans.bindCrispKey(isHeavy = true) {
             computeTranspose()
         }
 
-        btnMatAdd.setOnClickListener {
-            onHaptic(it)
+        btnMatAdd.bindCrispKey(isHeavy = true) {
             computeBinaryOp("+")
         }
 
-        btnMatSub.setOnClickListener {
-            onHaptic(it)
+        btnMatSub.bindCrispKey(isHeavy = true) {
             computeBinaryOp("-")
         }
 
-        btnMatMul.setOnClickListener {
-            onHaptic(it)
+        btnMatMul.bindCrispKey(isHeavy = true) {
             computeBinaryOp("*")
         }
 
-        btnMatKeyDet.setOnClickListener {
-            onHaptic(it)
+        btnMatKeyDet.bindCrispKey(isHeavy = true) {
             computeDeterminant()
         }
     }
@@ -476,24 +462,20 @@ class MatrixModeManager(
         )
 
         digitMap.forEach { (id, str) ->
-            rootLayout.findViewById<Button>(id)?.setOnClickListener {
-                onHaptic(it)
+            rootLayout.findViewById<Button>(id)?.bindCrispKey(isHeavy = false) {
                 handleInput(str)
             }
         }
 
-        rootLayout.findViewById<Button>(R.id.btnMatMinus)?.setOnClickListener {
-            onHaptic(it)
+        rootLayout.findViewById<Button>(R.id.btnMatMinus)?.bindCrispKey(isHeavy = false) {
             handleMinus()
         }
 
-        rootLayout.findViewById<Button>(R.id.btnMatDel)?.setOnClickListener {
-            onHaptic(it)
+        rootLayout.findViewById<Button>(R.id.btnMatDel)?.bindCrispKey(isHeavy = true) {
             handleDelete()
         }
 
-        rootLayout.findViewById<Button>(R.id.btnMatNext)?.setOnClickListener {
-            onHaptic(it)
+        rootLayout.findViewById<Button>(R.id.btnMatNext)?.bindCrispKey(isHeavy = true) {
             handleNext()
         }
     }

@@ -235,7 +235,11 @@ class EquationSystemSolver(
             is CasEngine.Node.Func -> {
                 collectVariables(node.arg, set)
             }
-            is CasEngine.Node.Num -> {}
+            is CasEngine.Node.Comb -> {
+                collectVariables(node.n, set)
+                collectVariables(node.k, set)
+            }
+            is CasEngine.Node.Num, is CasEngine.Node.Approx -> {}
         }
     }
 
@@ -305,6 +309,7 @@ class EquationSystemSolver(
     private fun evalNodeDouble(node: CasEngine.Node, vars: Map<String, Double>): Double {
         return when (node) {
             is CasEngine.Node.Num -> node.value.toDouble()
+            is CasEngine.Node.Approx -> node.value
             is CasEngine.Node.Variable -> {
                 val constVal = CasEngine.getConstantValue(node.name)
                 if (constVal != null) constVal
@@ -342,6 +347,20 @@ class EquationSystemSolver(
                     "cbrt" -> cbrt(a)
                     "abs" -> abs(a)
                     else -> Double.NaN
+                }
+            }
+            is CasEngine.Node.Comb -> {
+                val nD = evalNodeDouble(node.n, vars)
+                val kD = evalNodeDouble(node.k, vars)
+                if (nD.isNaN() || kD.isNaN() || nD < 0.0 || kD < 0.0 || nD % 1.0 != 0.0 || kD % 1.0 != 0.0 || kD > nD) {
+                    Double.NaN
+                } else {
+                    val resNode = casEngine.evalCombinatorics(node.isPerm, nD.toLong(), kD.toLong())
+                    when (resNode) {
+                        is CasEngine.Node.Num -> resNode.value.toDouble()
+                        is CasEngine.Node.Approx -> resNode.value
+                        else -> Double.NaN
+                    }
                 }
             }
         }

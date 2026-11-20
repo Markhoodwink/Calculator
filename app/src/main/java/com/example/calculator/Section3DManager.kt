@@ -62,16 +62,14 @@ class Section3DManager(
     }
 
     private fun initHeaderControls() {
-        btnSectionResetView.setOnClickListener {
-            onHaptic(it)
+        btnSectionResetView.bindCrispKey(isHeavy = false) {
             section3DView.cameraYaw = -35f
             section3DView.cameraPitch = 25f
             section3DView.zoomScale = 1.0f
             section3DView.invalidate()
         }
 
-        btnSectionClear.setOnClickListener {
-            onHaptic(it)
+        btnSectionClear.bindCrispKey(isHeavy = true) {
             section3DView.clearSelection()
         }
     }
@@ -87,8 +85,7 @@ class Section3DManager(
         )
 
         polyChips.forEach { (chip, polyId) ->
-            chip.setOnClickListener {
-                onHaptic(it)
+            chip.bindCrispKey(isHeavy = false) {
                 if (activePolyId != polyId) {
                     updatePolySelection(polyId)
                 }
@@ -164,8 +161,7 @@ class Section3DManager(
                 isClickable = true
                 isFocusable = true
 
-                setOnClickListener {
-                    onHaptic(it)
+                bindCrispKey(isHeavy = false) {
                     section3DView.setSelectedPoints(preset.points)
                 }
             }
@@ -174,8 +170,7 @@ class Section3DManager(
     }
 
     private fun initRatioControls() {
-        btnRatioVertex.setOnClickListener {
-            onHaptic(it)
+        btnRatioVertex.bindCrispKey(isHeavy = false) {
             val currentIdx = section3DView.activePointIndex
             if (currentIdx in 0 until section3DView.selectedPoints.size) {
                 val pt = section3DView.selectedPoints[currentIdx]
@@ -183,20 +178,16 @@ class Section3DManager(
                 section3DView.updateActivePointRatio(targetRatio)
             }
         }
-        btnRatioHalf.setOnClickListener {
-            onHaptic(it)
+        btnRatioHalf.bindCrispKey(isHeavy = false) {
             section3DView.updateActivePointRatio(0.5)
         }
-        btnRatioThird.setOnClickListener {
-            onHaptic(it)
+        btnRatioThird.bindCrispKey(isHeavy = false) {
             section3DView.updateActivePointRatio(1.0 / 3.0)
         }
-        btnRatioTwoThirds.setOnClickListener {
-            onHaptic(it)
+        btnRatioTwoThirds.bindCrispKey(isHeavy = false) {
             section3DView.updateActivePointRatio(2.0 / 3.0)
         }
-        btnRatioQuarter.setOnClickListener {
-            onHaptic(it)
+        btnRatioQuarter.bindCrispKey(isHeavy = false) {
             section3DView.updateActivePointRatio(0.25)
         }
     }
@@ -204,14 +195,13 @@ class Section3DManager(
     private fun initPointPills() {
         val pills = listOf(chipPoint1 to 0, chipPoint2 to 1, chipPoint3 to 2)
         pills.forEach { (pill, index) ->
-            pill.setOnClickListener {
-                onHaptic(it)
+            pill.bindCrispKey(isHeavy = false) {
                 if (index < section3DView.selectedPoints.size) {
                     section3DView.setSelectedPoints(section3DView.selectedPoints, index)
                 }
             }
             pill.setOnLongClickListener {
-                onHaptic(it)
+                KeyFeedback.trigger(it, isHeavy = true)
                 if (index < section3DView.selectedPoints.size) {
                     section3DView.selectedPoints.removeAt(index)
                     val newActive = if (section3DView.selectedPoints.isNotEmpty()) {

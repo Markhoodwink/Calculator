@@ -67,23 +67,19 @@ class SystemSolverManager(
     init {
         initKeypad()
 
-        btnAddEquation.setOnClickListener {
-            onHaptic(it)
+        btnAddEquation.bindCrispKey(isHeavy = true) {
             addEquationRow()
         }
 
-        btnSolveSystemMain.setOnClickListener {
-            onHaptic(it)
+        btnSolveSystemMain.bindCrispKey(isHeavy = true) {
             solve()
         }
 
-        btnSystemClear.setOnClickListener {
-            onHaptic(it)
+        btnSystemClear.bindCrispKey(isHeavy = true) {
             resetAll()
         }
 
-        btnCopySystemResult.setOnClickListener {
-            onHaptic(it)
+        btnCopySystemResult.bindCrispKey(isHeavy = true) {
             val textToCopy = tvSystemResult.text.toString().trim()
             if (textToCopy.isNotEmpty() && textToCopy != "Результат появится здесь") {
                 val clipboard = rootLayout.context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -94,14 +90,12 @@ class SystemSolverManager(
             }
         }
 
-        fabToggleSystemKeypad.setOnClickListener {
-            onHaptic(it)
+        fabToggleSystemKeypad.bindCrispKey(isHeavy = true) {
             val isVis = layoutSystemKeypad.visibility == View.VISIBLE
             setKeypadVisible(!isVis)
         }
 
-        btnToggleSystemSteps.setOnClickListener {
-            onHaptic(it)
+        btnToggleSystemSteps.bindCrispKey(isHeavy = false) {
             toggleSteps()
         }
 
@@ -238,8 +232,7 @@ class SystemSolverManager(
         equationRows.add(rowData)
         containerEquationsList.addView(rowLayout)
 
-        btnDelete.setOnClickListener {
-            onHaptic(it)
+        btnDelete.bindCrispKey(isHeavy = true) {
             removeEquationRow(rowData)
         }
 
@@ -375,29 +368,24 @@ class SystemSolverManager(
         )
 
         inputMap.forEach { (id, str) ->
-            rootLayout.findViewById<Button>(id)?.setOnClickListener {
-                onHaptic(it)
+            rootLayout.findViewById<Button>(id)?.bindCrispKey(isHeavy = false) {
                 handleInput(str)
             }
         }
 
-        rootLayout.findViewById<Button>(R.id.btnSysMinus)?.setOnClickListener {
-            onHaptic(it)
+        rootLayout.findViewById<Button>(R.id.btnSysMinus)?.bindCrispKey(isHeavy = false) {
             handleInput("-")
         }
 
-        rootLayout.findViewById<Button>(R.id.btnSysDel)?.setOnClickListener {
-            onHaptic(it)
+        rootLayout.findViewById<Button>(R.id.btnSysDel)?.bindCrispKey(isHeavy = true) {
             handleDelete()
         }
 
-        rootLayout.findViewById<Button>(R.id.btnSysNext)?.setOnClickListener {
-            onHaptic(it)
+        rootLayout.findViewById<Button>(R.id.btnSysNext)?.bindCrispKey(isHeavy = true) {
             handleNext()
         }
 
-        rootLayout.findViewById<Button>(R.id.btnSysSolve)?.setOnClickListener {
-            onHaptic(it)
+        rootLayout.findViewById<Button>(R.id.btnSysSolve)?.bindCrispKey(isHeavy = true) {
             solve()
         }
     }
