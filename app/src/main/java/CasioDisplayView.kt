@@ -11,6 +11,7 @@ import android.util.AttributeSet
 import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import kotlin.math.abs
 import kotlin.math.max
 
@@ -31,6 +32,10 @@ class CasioDisplayView @JvmOverloads constructor(
             val symbol: String, // "C" or "A"
             val upper: MathContainer = MathContainer(),
             val lower: MathContainer = MathContainer()
+        ) : MathItem()
+        data class LogBase(
+            val base: MathContainer = MathContainer(),
+            val arg: MathContainer = MathContainer()
         ) : MathItem()
     }
 
@@ -82,6 +87,11 @@ class CasioDisplayView @JvmOverloads constructor(
                         val u = item.upper.toRawString()
                         sb.append("$func(($l),($u))")
                     }
+                    is MathItem.LogBase -> {
+                        val b = item.base.toRawString()
+                        val a = item.arg.toRawString()
+                        sb.append("log(($b),($a))")
+                    }
                 }
             }
             return sb.toString()
@@ -118,11 +128,38 @@ class CasioDisplayView @JvmOverloads constructor(
     private var inputScrollX: Float = 0f
     private var resultScrollX: Float = 0f
     private var maxResultScrollX: Float = 0f
+    private var followCursorOnNextDraw: Boolean = true
+
+    private var touchDownX: Float = 0f
+    private var touchDownY: Float = 0f
+    private var lastTouchX: Float = 0f
+    private var dragStartScrollX: Float = 0f
+    private var dragStartResultScrollX: Float = 0f
+    private var isHorizontalDragging: Boolean = false
+    private var isVerticalSwiping: Boolean = false
+    private var isTouchInResultArea: Boolean = false
+    private val touchSlop: Float by lazy { ViewConfiguration.get(context).scaledTouchSlop.toFloat() }
 
     fun getResultText(): String = currentResultText
 
     var onContentChanged: ((String) -> Unit)? = null
+    var onPreviewClick: (() -> Unit)? = null
     var onSwipeDown: (() -> Unit)? = null
+
+    var isCompactInputMode: Boolean = false
+
+    fun setEditorTheme(isDark: Boolean) {
+        val textCol = Color.parseColor(if (isDark) "#F8FAFC" else "#0F172A")
+        val placeholderCol = Color.parseColor(if (isDark) "#64748B" else "#94A3B8")
+        val cursorCol = Color.parseColor(if (isDark) "#38BDF8" else "#0284C7")
+
+        inputTextPaint.color = textCol
+        smallTextPaint.color = textCol
+        inputLinePaint.color = textCol
+        placeholderPaint.color = placeholderCol
+        cursorPaint.color = cursorCol
+        invalidate()
+    }
 
     private val density = resources.displayMetrics.density
 
@@ -227,12 +264,12 @@ class CasioDisplayView @JvmOverloads constructor(
         isCursorVisible = true
         removeCallbacks(blinkRunnable)
         postDelayed(blinkRunnable, 500)
-        ensureCursorVisible()
         invalidate()
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
+        followCursorOnNextDraw = true
         ensureCursorVisible()
     }
 
@@ -319,6 +356,10 @@ class CasioDisplayView @JvmOverloads constructor(
                 is MathItem.Combinatorics -> {
                     autoCloseContainer(item.upper)
                     autoCloseContainer(item.lower)
+                }
+                is MathItem.LogBase -> {
+                    autoCloseContainer(item.base)
+                    autoCloseContainer(item.arg)
                 }
                 else -> {}
             }
@@ -517,6 +558,16 @@ class CasioDisplayView @JvmOverloads constructor(
         notifyChange()
     }
 
+    fun insertLogBase() {
+        val base = MathContainer(parent = currentContainer)
+        val arg = MathContainer(parent = currentContainer)
+        val item = MathItem.LogBase(base, arg)
+        currentContainer.items.add(cursorIndex, item)
+        currentContainer = base
+        cursorIndex = 0
+        notifyChange()
+    }
+
     private fun reparentItem(item: MathItem, newParent: MathContainer) {
         when (item) {
             is MathItem.Fraction -> {
@@ -537,6 +588,10 @@ class CasioDisplayView @JvmOverloads constructor(
             is MathItem.Combinatorics -> {
                 item.upper.parent = newParent
                 item.lower.parent = newParent
+            }
+            is MathItem.LogBase -> {
+                item.base.parent = newParent
+                item.arg.parent = newParent
             }
             else -> {}
         }
@@ -618,6 +673,18 @@ class CasioDisplayView @JvmOverloads constructor(
                     } else {
                         currentContainer = prev.lower
                         cursorIndex = prev.lower.items.size
+                    }
+                }
+                is MathItem.LogBase -> {
+                    if (prev.base.isEmpty() && prev.arg.isEmpty()) {
+                        currentContainer.items.removeAt(cursorIndex - 1)
+                        cursorIndex--
+                    } else if (prev.arg.isEmpty()) {
+                        currentContainer = prev.base
+                        cursorIndex = prev.base.items.size
+                    } else {
+                        currentContainer = prev.arg
+                        cursorIndex = prev.arg.items.size
                     }
                 }
                 else -> {
@@ -783,6 +850,45 @@ class CasioDisplayView @JvmOverloads constructor(
                                 }
                             }
                         }
+                        is MathItem.LogBase -> {
+                            if (item.arg === currentContainer) {
+                                if (item.arg.isEmpty()) {
+                                    if (item.base.isEmpty()) {
+                                        parent.items.removeAt(i)
+                                        currentContainer = parent
+                                        cursorIndex = i
+                                        handled = true
+                                        break
+                                    } else {
+                                        currentContainer = item.base
+                                        cursorIndex = item.base.items.size
+                                        handled = true
+                                        break
+                                    }
+                                }
+                            } else if (item.base === currentContainer) {
+                                if (item.base.isEmpty()) {
+                                    if (item.arg.isEmpty()) {
+                                        parent.items.removeAt(i)
+                                        currentContainer = parent
+                                        cursorIndex = i
+                                        handled = true
+                                        break
+                                    } else {
+                                        val logIdx = i
+                                        parent.items.removeAt(logIdx)
+                                        for (argItem in item.arg.items) {
+                                            reparentItem(argItem, parent)
+                                        }
+                                        parent.items.addAll(logIdx, item.arg.items)
+                                        currentContainer = parent
+                                        cursorIndex = logIdx
+                                        handled = true
+                                        break
+                                    }
+                                }
+                            }
+                        }
                         else -> {}
                     }
                 }
@@ -828,12 +934,17 @@ class CasioDisplayView @JvmOverloads constructor(
                     if (it.lower === currentContainer) { currentContainer = it.upper; cursorIndex = it.upper.items.size; return }
                     if (it.upper === currentContainer) { currentContainer = parent; cursorIndex = i; return }
                 }
+                is MathItem.LogBase -> {
+                    if (it.arg === currentContainer) { currentContainer = it.base; cursorIndex = it.base.items.size; return }
+                    if (it.base === currentContainer) { currentContainer = parent; cursorIndex = i; return }
+                }
                 else -> {}
             }
         }
     }
 
     fun moveLeft() {
+        followCursorOnNextDraw = true
         if (cursorIndex > 0) {
             when (val prev = currentContainer.items[cursorIndex - 1]) {
                 is MathItem.Fraction -> { currentContainer = prev.den; cursorIndex = prev.den.items.size }
@@ -841,6 +952,7 @@ class CasioDisplayView @JvmOverloads constructor(
                 is MathItem.Sqrt -> { currentContainer = prev.inner; cursorIndex = prev.inner.items.size }
                 is MathItem.Superscript -> { currentContainer = prev.exp; cursorIndex = prev.exp.items.size }
                 is MathItem.Combinatorics -> { currentContainer = prev.lower; cursorIndex = prev.lower.items.size }
+                is MathItem.LogBase -> { currentContainer = prev.arg; cursorIndex = prev.arg.items.size }
                 else -> cursorIndex--
             }
         } else {
@@ -850,6 +962,7 @@ class CasioDisplayView @JvmOverloads constructor(
     }
 
     fun moveRight() {
+        followCursorOnNextDraw = true
         if (cursorIndex < currentContainer.items.size) {
             when (val next = currentContainer.items[cursorIndex]) {
                 is MathItem.Fraction -> { currentContainer = next.num; cursorIndex = 0 }
@@ -857,6 +970,7 @@ class CasioDisplayView @JvmOverloads constructor(
                 is MathItem.Sqrt -> { currentContainer = next.inner; cursorIndex = 0 }
                 is MathItem.Superscript -> { currentContainer = next.exp; cursorIndex = 0 }
                 is MathItem.Combinatorics -> { currentContainer = next.upper; cursorIndex = 0 }
+                is MathItem.LogBase -> { currentContainer = next.base; cursorIndex = 0 }
                 else -> cursorIndex++
             }
         } else {
@@ -878,6 +992,10 @@ class CasioDisplayView @JvmOverloads constructor(
                         if (it.upper === currentContainer) { currentContainer = it.lower; cursorIndex = 0; resetCursorBlink(); return }
                         if (it.lower === currentContainer) { currentContainer = parent; cursorIndex = i + 1; resetCursorBlink(); return }
                     }
+                    is MathItem.LogBase -> {
+                        if (it.base === currentContainer) { currentContainer = it.arg; cursorIndex = 0; resetCursorBlink(); return }
+                        if (it.arg === currentContainer) { currentContainer = parent; cursorIndex = i + 1; resetCursorBlink(); return }
+                    }
                     else -> {}
                 }
             }
@@ -886,6 +1004,7 @@ class CasioDisplayView @JvmOverloads constructor(
     }
 
     fun jumpUp() {
+        followCursorOnNextDraw = true
         val parent = currentContainer.parent
         if (parent != null) {
             for (it in parent.items) {
@@ -897,6 +1016,9 @@ class CasioDisplayView @JvmOverloads constructor(
                 }
                 if (it is MathItem.Combinatorics && it.lower === currentContainer) {
                     currentContainer = it.upper; cursorIndex = it.upper.items.size; resetCursorBlink(); return
+                }
+                if (it is MathItem.LogBase && it.base === currentContainer) {
+                    currentContainer = it.arg; cursorIndex = it.arg.items.size; resetCursorBlink(); return
                 }
             }
         }
@@ -912,9 +1034,14 @@ class CasioDisplayView @JvmOverloads constructor(
         if (comb != null) {
             currentContainer = comb.upper; cursorIndex = comb.upper.items.size; resetCursorBlink(); return
         }
+        val logBase = currentContainer.items.filterIsInstance<MathItem.LogBase>().firstOrNull()
+        if (logBase != null) {
+            currentContainer = logBase.arg; cursorIndex = logBase.arg.items.size; resetCursorBlink(); return
+        }
     }
 
     fun jumpDown() {
+        followCursorOnNextDraw = true
         val parent = currentContainer.parent
         if (parent != null) {
             for (it in parent.items) {
@@ -926,6 +1053,9 @@ class CasioDisplayView @JvmOverloads constructor(
                 }
                 if (it is MathItem.Combinatorics && it.upper === currentContainer) {
                     currentContainer = it.lower; cursorIndex = it.lower.items.size; resetCursorBlink(); return
+                }
+                if (it is MathItem.LogBase && it.arg === currentContainer) {
+                    currentContainer = it.base; cursorIndex = it.base.items.size; resetCursorBlink(); return
                 }
             }
         }
@@ -941,6 +1071,10 @@ class CasioDisplayView @JvmOverloads constructor(
         if (comb != null) {
             currentContainer = comb.lower; cursorIndex = comb.lower.items.size; resetCursorBlink(); return
         }
+        val logBase = currentContainer.items.filterIsInstance<MathItem.LogBase>().firstOrNull()
+        if (logBase != null) {
+            currentContainer = logBase.base; cursorIndex = logBase.base.items.size; resetCursorBlink(); return
+        }
     }
 
     fun getRawExpression(): String = rootContainer.toRawString()
@@ -949,21 +1083,41 @@ class CasioDisplayView @JvmOverloads constructor(
         _hasResult = false
         currentResultText = ""
         resultEntries = emptyList()
+        followCursorOnNextDraw = true
         resetCursorBlink()
-        ensureCursorVisible()
         onContentChanged?.invoke(getRawExpression())
     }
 
     private fun normalizeSuperscripts(text: String): String {
-        val supDigits = mapOf(
+        val supMap = mapOf(
             '0' to '⁰', '1' to '¹', '2' to '²', '3' to '³', '4' to '⁴',
             '5' to '⁵', '6' to '⁶', '7' to '⁷', '8' to '⁸', '9' to '⁹',
-            '-' to '⁻', '+' to '⁺'
+            '-' to '⁻', '+' to '⁺', '/' to '⁄', '=' to '⁼',
+            '(' to '⁽', ')' to '⁾',
+            'a' to 'ᵃ', 'b' to 'ᵇ', 'c' to 'ᶜ', 'd' to 'ᵈ', 'e' to 'ᵉ',
+            'h' to 'ʰ', 'i' to 'ⁱ', 'j' to 'ʲ', 'k' to 'ᵏ', 'l' to 'ˡ',
+            'm' to 'ᵐ', 'n' to 'ⁿ', 'o' to 'ᵒ', 'p' to 'ᵖ', 'r' to 'ʳ',
+            's' to 'ˢ', 't' to 'ᵗ', 'u' to 'ᵘ', 'v' to 'ᵛ', 'w' to 'ʷ',
+            'x' to 'ˣ', 'y' to 'ʸ', 'z' to 'ᶻ'
         )
-        val regex = Regex("""\^\{?([+-]?\d+)\}?""")
-        return regex.replace(text) { matchResult ->
-            matchResult.groupValues[1].map { supDigits[it] ?: it }.joinToString("")
+
+        // 1. Handle ^(...)
+        val parenRegex = Regex("""\^\(([^)]+)\)""")
+        var result = parenRegex.replace(text) { match ->
+            val inner = match.groupValues[1].trim()
+            val converted = inner.mapNotNull { c ->
+                if (c == ' ') null else supMap[c] ?: c
+            }.joinToString("")
+            converted
         }
+
+        // 2. Handle ^{...} or ^[+-]?\d+
+        val curlyOrDirectRegex = Regex("""\^\{?([+-]?\d+)\}?""")
+        result = curlyOrDirectRegex.replace(result) { match ->
+            match.groupValues[1].map { supMap[it] ?: it }.joinToString("")
+        }
+
+        return result
     }
 
     fun setLivePreview(previewText: String?) {
@@ -991,6 +1145,7 @@ class CasioDisplayView @JvmOverloads constructor(
         resultNumerator = resultEntries.firstOrNull()?.numerator
         resultDenominator = resultEntries.firstOrNull()?.denominator
         resultScrollX = 0f
+        followCursorOnNextDraw = true
         invalidate()
     }
 
@@ -1022,8 +1177,8 @@ class CasioDisplayView @JvmOverloads constructor(
         var slashIdx = -1
         for (i in expr.indices) {
             when (expr[i]) {
-                '(' -> depth++
-                ')' -> depth--
+                '(', '{' -> depth++
+                ')', '}' -> depth--
                 '/' -> if (depth == 0) { slashIdx = i; break }
             }
         }
@@ -1196,6 +1351,20 @@ class CasioDisplayView @JvmOverloads constructor(
                     continue
                 }
             }
+            if (s.startsWith("log((", i)) {
+                val match = findLogBaseMatch(s, i)
+                if (match != null) {
+                    val item = MathItem.LogBase(
+                        base = MathContainer(parent = target),
+                        arg = MathContainer(parent = target)
+                    )
+                    populateContainerFromString(match.baseStr, item.base)
+                    populateContainerFromString(match.argStr, item.arg)
+                    target.items.add(item)
+                    i = match.nextIdx
+                    continue
+                }
+            }
             if (s.startsWith("comb((", i) || s.startsWith("perm((", i)) {
                 val match = findCombinatoricsMatch(s, i)
                 if (match != null) {
@@ -1272,6 +1441,23 @@ class CasioDisplayView @JvmOverloads constructor(
         return CombMatch(symbol, lowerStr, upperStr, upperCloseIdx + 2)
     }
 
+    private data class LogBaseMatch(val baseStr: String, val argStr: String, val nextIdx: Int)
+
+    private fun findLogBaseMatch(s: String, startIdx: Int): LogBaseMatch? {
+        if (!s.startsWith("log((", startIdx)) return null
+        val baseOpenIdx = startIdx + 4
+        val baseCloseIdx = findMatchingParen(s, baseOpenIdx)
+        if (baseCloseIdx == -1 || baseCloseIdx + 2 >= s.length) return null
+        if (s[baseCloseIdx + 1] != ',' || s[baseCloseIdx + 2] != '(') return null
+        val argOpenIdx = baseCloseIdx + 2
+        val argCloseIdx = findMatchingParen(s, argOpenIdx)
+        if (argCloseIdx == -1 || argCloseIdx + 1 >= s.length) return null
+        if (s[argCloseIdx + 1] != ')') return null
+        val baseStr = s.substring(baseOpenIdx + 1, baseCloseIdx)
+        val argStr = s.substring(argOpenIdx + 1, argCloseIdx)
+        return LogBaseMatch(baseStr, argStr, argCloseIdx + 2)
+    }
+
     // --- РАСЧЁТ РАЗМЕРОВ И ОТРИСОВКА ---
     data class MeasureResult(val width: Float, val ascent: Float, val descent: Float) {
         val totalHeight: Float get() = ascent + descent
@@ -1340,6 +1526,22 @@ class CasioDisplayView @JvmOverloads constructor(
                     val combDescent = max(maxDescent, 6f * density + lowerM.descent)
                     if (combAscent > maxAscent) maxAscent = combAscent
                     if (combDescent > maxDescent) maxDescent = combDescent
+                }
+                is MathItem.LogBase -> {
+                    val logW = paint.measureText("log")
+                    val baseM = measureContainer(item.base, isSuperscript = true)
+                    val openW = paint.measureText("(")
+                    val argM = measureContainer(item.arg, isSuperscript = false)
+                    val closeW = paint.measureText(")")
+                    val itemW = logW + baseM.width + openW + argM.width + closeW
+                    totalW += itemW
+
+                    val baseAscent = baseM.ascent - 6f * density
+                    val baseDescent = 6f * density + baseM.descent
+                    if (baseAscent > maxAscent) maxAscent = baseAscent
+                    if (baseDescent > maxDescent) maxDescent = baseDescent
+                    if (argM.ascent > maxAscent) maxAscent = argM.ascent
+                    if (argM.descent > maxDescent) maxDescent = argM.descent
                 }
             }
         }
@@ -1421,6 +1623,21 @@ class CasioDisplayView @JvmOverloads constructor(
                     if (inLower != null) return inLower
                     currentX += itemW + 2f * density
                 }
+                is MathItem.LogBase -> {
+                    val logW = paint.measureText("log")
+                    val baseM = measureContainer(item.base, isSuperscript = true)
+                    val openW = paint.measureText("(")
+                    val argM = measureContainer(item.arg, isSuperscript = false)
+                    val closeW = paint.measureText(")")
+
+                    val inBase = getCursorXInContainer(item.base, currentX + logW, isSuperscript = true)
+                    if (inBase != null) return inBase
+
+                    val inArg = getCursorXInContainer(item.arg, currentX + logW + baseM.width + openW, isSuperscript = false)
+                    if (inArg != null) return inArg
+
+                    currentX += logW + baseM.width + openW + argM.width + closeW
+                }
             }
         }
         return null
@@ -1463,11 +1680,21 @@ class CasioDisplayView @JvmOverloads constructor(
 
         // 1. Отрисовка вводимого выражения (слева сверху)
         val totalM = measureContainer(rootContainer)
-        val inputBaselineY = max(34f * density, totalM.ascent + 6f * density)
+        val inputBaselineY = if (isCompactInputMode && !hasResult && !hasPreview) {
+            val centeredY = (height.toFloat() + totalM.ascent - totalM.descent) / 2f
+            centeredY.coerceAtLeast(totalM.ascent + 6f * density)
+        } else {
+            max(34f * density, totalM.ascent + 6f * density)
+        }
         val startX = 14f * density
         val margin = 24f * density
         val maxInputScroll = max(0f, startX + totalM.width + margin - width)
-        inputScrollX = inputScrollX.coerceIn(0f, maxInputScroll)
+        if (followCursorOnNextDraw) {
+            ensureCursorVisible()
+            followCursorOnNextDraw = false
+        } else {
+            inputScrollX = inputScrollX.coerceIn(0f, maxInputScroll)
+        }
 
         canvas.save()
         canvas.clipRect(0f, 0f, width.toFloat(), getResultBoundaryY())
@@ -1680,7 +1907,7 @@ class CasioDisplayView @JvmOverloads constructor(
                     if (item.degree != null) {
                         val degreePaint = Paint(smallTextPaint).apply {
                             textSize = 11f * density
-                            color = Color.parseColor("#0F172A")
+                            color = smallTextPaint.color
                             typeface = Typeface.create(Typeface.SERIF, Typeface.BOLD)
                         }
                         val degX = currentX + 1.5f * density
@@ -1712,6 +1939,29 @@ class CasioDisplayView @JvmOverloads constructor(
                     drawContainer(canvas, item.lower, currentX + symW, lowerBaseY, isSuperscript = true)
 
                     currentX += itemW + 2f * density
+                }
+                is MathItem.LogBase -> {
+                    val logW = paint.measureText("log")
+                    canvas.drawText("log", currentX, baselineY, paint)
+
+                    val baseStartX = currentX + logW
+                    val baseBaseY = baselineY + 6f * density
+                    drawContainer(canvas, item.base, baseStartX, baseBaseY, isSuperscript = true)
+                    val baseM = measureContainer(item.base, isSuperscript = true)
+
+                    val openStartX = baseStartX + baseM.width
+                    canvas.drawText("(", openStartX, baselineY, paint)
+                    val openW = paint.measureText("(")
+
+                    val argStartX = openStartX + openW
+                    drawContainer(canvas, item.arg, argStartX, baselineY, isSuperscript = false)
+                    val argM = measureContainer(item.arg, isSuperscript = false)
+
+                    val closeStartX = argStartX + argM.width
+                    canvas.drawText(")", closeStartX, baselineY, paint)
+                    val closeW = paint.measureText(")")
+
+                    currentX = closeStartX + closeW
                 }
             }
         }
@@ -2010,82 +2260,130 @@ class CasioDisplayView @JvmOverloads constructor(
                     }
                     currentX += totalItemW
                 }
+                is MathItem.LogBase -> {
+                    val logW = paint.measureText("log")
+                    val baseM = measureContainer(item.base, isSuperscript = true)
+                    val openW = paint.measureText("(")
+                    val argM = measureContainer(item.arg, isSuperscript = false)
+                    val closeW = paint.measureText(")")
+                    val totalItemW = logW + baseM.width + openW + argM.width + closeW
+
+                    if (tapX < currentX) {
+                        return Pair(container, i)
+                    }
+                    if (tapX <= currentX + totalItemW) {
+                        if (tapX < currentX + logW) {
+                            return Pair(container, i)
+                        }
+                        if (tapX < currentX + logW + baseM.width) {
+                            return hitTestContainer(item.base, currentX + logW, baselineY + 6f * density, tapX, tapY, isSuperscript = true)
+                        }
+                        if (tapX < currentX + logW + baseM.width + openW) {
+                            return Pair(item.arg, 0)
+                        }
+                        return hitTestContainer(item.arg, currentX + logW + baseM.width + openW, baselineY, tapX, tapY, isSuperscript = false)
+                    }
+                    currentX += totalItemW
+                }
             }
         }
         return Pair(container, container.items.size)
     }
 
     private val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
-        override fun onDown(e: MotionEvent): Boolean {
-            resetCursorBlink()
-            return true
-        }
-
-        override fun onSingleTapUp(e: MotionEvent): Boolean {
-            resetCursorBlink()
-            if (e.y < getResultBoundaryY()) {
-                val totalM = measureContainer(rootContainer)
-                val inputBaselineY = max(34f * density, totalM.ascent + 6f * density)
-                val startX = 14f * density
-                val tapCanvasX = e.x + inputScrollX
-                val tapCanvasY = e.y
-                val hit = hitTestContainer(rootContainer, startX, inputBaselineY, tapCanvasX, tapCanvasY)
-                currentContainer = hit.first
-                cursorIndex = hit.second
-                resetCursorBlink()
-                invalidate()
-            }
-            performClick()
-            return true
-        }
-
         override fun onLongPress(e: MotionEvent) {
-            performLongClick()
-        }
-
-        override fun onScroll(
-            e1: MotionEvent?,
-            e2: MotionEvent,
-            distanceX: Float,
-            distanceY: Float
-        ): Boolean {
-            if (abs(distanceX) > abs(distanceY)) {
-                val startY = e1?.y ?: e2.y
-                if (startY < getResultBoundaryY()) {
-                    val startX = 14f * density
-                    val totalM = measureContainer(rootContainer)
-                    val maxScroll = max(0f, startX + totalM.width + 24f * density - width)
-                    inputScrollX = (inputScrollX + distanceX).coerceIn(0f, maxScroll)
-                } else {
-                    resultScrollX = (resultScrollX + distanceX).coerceIn(0f, maxResultScrollX)
-                }
-                invalidate()
-                return true
+            if (!isHorizontalDragging && !isVerticalSwiping) {
+                performLongClick()
             }
-            return false
-        }
-
-        override fun onFling(
-            e1: MotionEvent?,
-            e2: MotionEvent,
-            velocityX: Float,
-            velocityY: Float
-        ): Boolean {
-            if (e1 != null) {
-                val dy = e2.y - e1.y
-                val dx = e2.x - e1.x
-                if (dy > 60f * density && abs(dy) > abs(dx) && velocityY > 100f) {
-                    onSwipeDown?.invoke()
-                    return true
-                }
-            }
-            return false
         }
     })
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        val gestureHandled = gestureDetector.onTouchEvent(event)
-        return gestureHandled || super.onTouchEvent(event)
+        gestureDetector.onTouchEvent(event)
+
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                touchDownX = event.x
+                touchDownY = event.y
+                lastTouchX = event.x
+                dragStartScrollX = inputScrollX
+                dragStartResultScrollX = resultScrollX
+                isHorizontalDragging = false
+                isVerticalSwiping = false
+                isTouchInResultArea = event.y >= getResultBoundaryY()
+                resetCursorBlink()
+            }
+            MotionEvent.ACTION_MOVE -> {
+                val totalDx = event.x - touchDownX
+                val totalDy = event.y - touchDownY
+
+                if (!isHorizontalDragging && !isVerticalSwiping) {
+                    if (abs(totalDx) > touchSlop && abs(totalDx) >= abs(totalDy)) {
+                        isHorizontalDragging = true
+                        followCursorOnNextDraw = false
+                        parent?.requestDisallowInterceptTouchEvent(true)
+                    } else if (abs(totalDy) > touchSlop && abs(totalDy) > abs(totalDx)) {
+                        isVerticalSwiping = true
+                    }
+                }
+
+                if (isHorizontalDragging) {
+                    if (isTouchInResultArea && (hasResult || (!hasResult && hasPreview && previewEntries.isNotEmpty()))) {
+                        resultScrollX = (dragStartResultScrollX - totalDx).coerceIn(0f, maxResultScrollX)
+                    } else {
+                        val startX = 14f * density
+                        val margin = 24f * density
+                        val totalM = measureContainer(rootContainer)
+                        val maxInputScroll = max(0f, startX + totalM.width + margin - width)
+                        inputScrollX = (dragStartScrollX - totalDx).coerceIn(0f, maxInputScroll)
+                    }
+                    invalidate()
+                }
+            }
+            MotionEvent.ACTION_UP -> {
+                parent?.requestDisallowInterceptTouchEvent(false)
+                if (!isHorizontalDragging && !isVerticalSwiping) {
+                    if (event.y < getResultBoundaryY()) {
+                        val totalM = measureContainer(rootContainer)
+                        val inputBaselineY = if (isCompactInputMode && !hasResult && !hasPreview) {
+                            val centeredY = (height.toFloat() + totalM.ascent - totalM.descent) / 2f
+                            centeredY.coerceAtLeast(totalM.ascent + 6f * density)
+                        } else {
+                            max(34f * density, totalM.ascent + 6f * density)
+                        }
+                        val startX = 14f * density
+                        val tapCanvasX = event.x + inputScrollX
+                        val tapCanvasY = event.y
+                        val hit = hitTestContainer(rootContainer, startX, inputBaselineY, tapCanvasX, tapCanvasY)
+                        val prevContainer = currentContainer
+                        val prevIndex = cursorIndex
+                        currentContainer = hit.first
+                        cursorIndex = hit.second
+                        if (currentContainer !== prevContainer || cursorIndex != prevIndex) {
+                            followCursorOnNextDraw = true
+                        }
+                        resetCursorBlink()
+                        invalidate()
+                    } else if (!hasResult && hasPreview && previewEntries.isNotEmpty()) {
+                        onPreviewClick?.invoke()
+                    }
+                    performClick()
+                } else if (isVerticalSwiping) {
+                    val dy = event.y - touchDownY
+                    if (dy > 60f * density) {
+                        onSwipeDown?.invoke()
+                    }
+                }
+                isHorizontalDragging = false
+                isVerticalSwiping = false
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                parent?.requestDisallowInterceptTouchEvent(false)
+                isHorizontalDragging = false
+                isVerticalSwiping = false
+            }
+        }
+        return true
     }
 
     override fun performClick(): Boolean {

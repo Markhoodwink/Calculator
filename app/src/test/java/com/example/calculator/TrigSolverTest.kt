@@ -235,4 +235,55 @@ class TrigSolverTest {
         }
         assertNotNull("Expected step showing rejection of x = π by ODZ", rejectionStep)
     }
+
+    @Test
+    fun testTanCotReciprocalEquation() {
+        val result = TrigSolverEngine.solve(
+            equation = "((1)/(tan(x)))+((1)/(ctg(x)))-2 * ctg(x)=2",
+            casEngine = casEngine
+        )
+        assertTrue("generalSolutions must be non-empty", result.generalSolutions.isNotEmpty())
+        assertNull("errorMessage must be null", result.errorMessage)
+
+        val intervalRes1 = TrigSolverEngine.solve(
+            equation = "((1)/(tan(x)))+((1)/(ctg(x)))-2 * ctg(x)=2",
+            intervalStartStr = "0",
+            intervalEndStr = "π",
+            casEngine = casEngine
+        )
+        val roots1 = intervalRes1.rootsOnInterval
+        assertEquals(2, roots1.size)
+        assertEquals("3π/8", roots1[0].symbolic)
+        assertEquals("7π/8", roots1[1].symbolic)
+
+        val intervalRes2 = TrigSolverEngine.solve(
+            equation = "((1)/(tan(x)))+((1)/(ctg(x)))-2 * ctg(x)=2",
+            intervalStartStr = "π/2",
+            intervalEndStr = "π",
+            casEngine = casEngine
+        )
+        val roots2 = intervalRes2.rootsOnInterval
+        assertEquals(1, roots2.size)
+        assertEquals("7π/8", roots2[0].symbolic)
+    }
+
+    @Test
+    fun testReductionCotDoubleAngleOdz() {
+        val result = TrigSolverEngine.solve(
+            equation = "1 + ctg(2x) = 1 / cos(3π/2 - 2x)",
+            casEngine = casEngine
+        )
+        assertTrue("generalSolutions must be non-empty", result.generalSolutions.isNotEmpty())
+        assertNull("errorMessage must be null", result.errorMessage)
+
+        val allFormulas = result.generalSolutions.joinToString("; ") { it.displayFormula }
+        assertTrue(
+            "Expected -π/4 or 3π/4 in generalSolutions: $allFormulas",
+            allFormulas.contains("-π/4") || allFormulas.contains("3π/4") || allFormulas.contains("7π/4")
+        )
+        assertFalse(
+            "Extraneous root π/2 must be excluded by ODZ",
+            allFormulas.contains("π/2")
+        )
+    }
 }

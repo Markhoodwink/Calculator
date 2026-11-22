@@ -1426,6 +1426,11 @@
         layout="@layout/layout_unit_converter"
         android:visibility="gone" />
 
+    <!-- РЕЖИМ: НЕРАВЕНСТВА (ЕГЭ №15) -->
+    <include
+        layout="@layout/layout_inequality_solver"
+        android:visibility="gone" />
+
     <!-- СТАРТОВЫЙ ОВЕРЛЕЙ / ЭКРАН ВЫБОРА РЕЖИМОВ -->
     <FrameLayout
         android:id="@+id/layoutModeHub"
@@ -1449,7 +1454,7 @@
                 android:paddingTop="28dp"
                 android:paddingBottom="24dp">
 
-                <!-- Header bar: Title left, btnOpenGuide & btnToggleTheme right -->
+                <!-- Header bar: Title left, btnOpenGuide, btnToggleTheme & btnOpenScanner right -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -1464,7 +1469,7 @@
                         android:layout_weight="1"
                         android:text="MB-CAL"
                         android:textColor="#F8FAFC"
-                        android:textSize="26sp"
+                        android:textSize="22sp"
                         android:textStyle="bold"
                         android:letterSpacing="0.04" />
 
@@ -1475,12 +1480,12 @@
                         android:clickable="true"
                         android:focusable="true"
                         android:gravity="center"
-                        android:paddingHorizontal="12dp"
+                        android:paddingHorizontal="10dp"
                         android:paddingVertical="7dp"
-                        android:layout_marginEnd="8dp"
+                        android:layout_marginEnd="6dp"
                         android:text="📖 Гайд"
                         android:textColor="#38BDF8"
-                        android:textSize="13sp"
+                        android:textSize="12sp"
                         android:textStyle="bold" />
 
                     <TextView
@@ -1491,11 +1496,26 @@
                         android:clickable="true"
                         android:focusable="true"
                         android:gravity="center"
-                        android:paddingHorizontal="14dp"
+                        android:paddingHorizontal="10dp"
                         android:paddingVertical="7dp"
+                        android:layout_marginEnd="6dp"
                         android:text="☀ Светлая"
                         android:textColor="#F8FAFC"
-                        android:textSize="13sp"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/btnOpenScanner"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:gravity="center"
+                        android:paddingHorizontal="10dp"
+                        android:paddingVertical="7dp"
+                        android:text="📷 Скан"
+                        android:textColor="#10B981"
+                        android:textSize="12sp"
                         android:textStyle="bold" />
                 </LinearLayout>
 
@@ -1929,7 +1949,70 @@
                     </com.google.android.material.card.MaterialCardView>
                 </LinearLayout>
 
-                <!-- 5. Subtle footer label -->
+                <!-- 5. Row with cardModeInequality -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:orientation="horizontal">
+
+                    <!-- cardModeInequality -->
+                    <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/cardModeInequality"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:minHeight="132dp"
+                        app:cardBackgroundColor="#1E293B"
+                        app:cardCornerRadius="16dp"
+                        app:cardElevation="0dp"
+                        app:strokeColor="#334155"
+                        app:strokeWidth="1.5dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:minHeight="132dp"
+                            android:orientation="vertical"
+                            android:padding="14dp">
+
+                            <TextView
+                                android:id="@+id/badgeModeInequality"
+                                android:layout_width="40dp"
+                                android:layout_height="40dp"
+                                android:background="@drawable/bg_mode_badge"
+                                android:gravity="center"
+                                android:text="⋚"
+                                android:textColor="#10B981"
+                                android:textSize="18sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tvModeInequalityTitle"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="10dp"
+                                android:text="Неравенства ЕГЭ"
+                                android:textColor="#F8FAFC"
+                                android:textSize="15sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tvModeInequalityDesc"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="4dp"
+                                android:lineSpacingExtra="2dp"
+                                android:text="Метод интервалов, ОДЗ и числовая прямая"
+                                android:textColor="#94A3B8"
+                                android:textSize="12sp" />
+                        </LinearLayout>
+                    </com.google.android.material.card.MaterialCardView>
+                </LinearLayout>
+
+                <!-- 6. Subtle footer label -->
                 <TextView
                     android:id="@+id/tvHubFooter"
                     android:layout_width="match_parent"
@@ -1942,4 +2025,9 @@
             </LinearLayout>
         </ScrollView>
     </FrameLayout>
+
+    <!-- РЕЖИМ: СКАНЕР ФОРМУЛ -->
+    <include
+        layout="@layout/layout_formula_scanner"
+        android:visibility="gone" />
 </FrameLayout>

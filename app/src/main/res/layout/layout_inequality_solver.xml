@@ -1,0 +1,1362 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/layoutInequalitySolver"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#0A0E17"
+    android:clickable="true"
+    android:focusable="true"
+    android:orientation="vertical">
+
+    <!-- ВЕРХНЯЯ ПАНЕЛЬ -->
+    <LinearLayout
+        android:id="@+id/layoutIneqHeader"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="14dp"
+        android:paddingTop="12dp"
+        android:paddingBottom="8dp">
+
+        <TextView
+            android:id="@+id/btnIneqBack"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="#1E293B"
+            android:clickable="true"
+            android:focusable="true"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="5dp"
+            android:text="← РЕЖИМЫ"
+            android:textColor="#38BDF8"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tvIneqTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="Неравенства (ЕГЭ №15)"
+            android:textColor="#F8FAFC"
+            android:textSize="13sp"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/btnIneqClear"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="#1E293B"
+            android:clickable="true"
+            android:focusable="true"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="5dp"
+            android:text="Сброс"
+            android:textColor="#EF4444"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <!-- РАБОЧАЯ ОБЛАСТЬ (SCROLLVIEW) -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <ScrollView
+            android:id="@+id/scrollInequalitySolver"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:fillViewport="true"
+            android:overScrollMode="never">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingHorizontal="12dp"
+                android:paddingTop="4dp"
+                android:paddingBottom="44dp">
+
+                <!-- КАРТОЧКА 1: ВВОД И ПРИМЕРЫ -->
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/cardIneqInput"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    app:cardBackgroundColor="#1E293B"
+                    app:cardCornerRadius="12dp"
+                    app:cardElevation="0dp"
+                    app:strokeColor="#334155"
+                    app:strokeWidth="1dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="8dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <TextView
+                                android:id="@+id/tvIneqInputLabel"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="Неравенство:"
+                                android:textColor="#94A3B8"
+                                android:textSize="12sp"
+                                android:textStyle="bold" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/btnIneqSolve"
+                                style="@style/Widget.MaterialComponents.Button"
+                                android:layout_width="wrap_content"
+                                android:layout_height="34dp"
+                                android:backgroundTint="#10B981"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:text="Решить"
+                                android:textAllCaps="false"
+                                android:textColor="#FFFFFF"
+                                android:textSize="13sp"
+                                android:textStyle="bold"
+                                app:cornerRadius="8dp" />
+                        </LinearLayout>
+
+                        <com.example.calculator.CasioDisplayView
+                            android:id="@+id/ineqCasioDisplay"
+                            android:layout_width="match_parent"
+                            android:layout_height="84dp"
+                            android:layout_marginTop="6dp" />
+
+                        <!-- Примеры ЕГЭ №15 -->
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:text="Примеры ЕГЭ №15:"
+                            android:textColor="#94A3B8"
+                            android:textSize="11sp" />
+
+                        <HorizontalScrollView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:overScrollMode="never"
+                            android:scrollbars="none">
+
+                            <LinearLayout
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:orientation="horizontal">
+
+                                <Button
+                                    android:id="@+id/btnIneqPreset1"
+                                    style="@style/Widget.MaterialComponents.Button"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="32dp"
+                                    android:layout_marginEnd="4dp"
+                                    android:backgroundTint="#243042"
+                                    android:insetTop="0dp"
+                                    android:insetBottom="0dp"
+                                    android:paddingHorizontal="10dp"
+                                    android:text="Рациональное"
+                                    android:textAllCaps="false"
+                                    android:textColor="#38BDF8"
+                                    android:textSize="11sp"
+                                    app:cornerRadius="16dp" />
+
+                                <Button
+                                    android:id="@+id/btnIneqPreset2"
+                                    style="@style/Widget.MaterialComponents.Button"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="32dp"
+                                    android:layout_marginEnd="4dp"
+                                    android:backgroundTint="#243042"
+                                    android:insetTop="0dp"
+                                    android:insetBottom="0dp"
+                                    android:paddingHorizontal="10dp"
+                                    android:text="Показат. ЕГЭ"
+                                    android:textAllCaps="false"
+                                    android:textColor="#38BDF8"
+                                    android:textSize="11sp"
+                                    app:cornerRadius="16dp" />
+
+                                <Button
+                                    android:id="@+id/btnIneqPreset3"
+                                    style="@style/Widget.MaterialComponents.Button"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="32dp"
+                                    android:layout_marginEnd="4dp"
+                                    android:backgroundTint="#243042"
+                                    android:insetTop="0dp"
+                                    android:insetBottom="0dp"
+                                    android:paddingHorizontal="10dp"
+                                    android:text="Дробь 2ˣ"
+                                    android:textAllCaps="false"
+                                    android:textColor="#38BDF8"
+                                    android:textSize="11sp"
+                                    app:cornerRadius="16dp" />
+
+                                <Button
+                                    android:id="@+id/btnIneqPreset4"
+                                    style="@style/Widget.MaterialComponents.Button"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="32dp"
+                                    android:layout_marginEnd="4dp"
+                                    android:backgroundTint="#243042"
+                                    android:insetTop="0dp"
+                                    android:insetBottom="0dp"
+                                    android:paddingHorizontal="10dp"
+                                    android:text="Логарифм logₓ"
+                                    android:textAllCaps="false"
+                                    android:textColor="#38BDF8"
+                                    android:textSize="11sp"
+                                    app:cornerRadius="16dp" />
+
+                                <Button
+                                    android:id="@+id/btnIneqPreset5"
+                                    style="@style/Widget.MaterialComponents.Button"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="32dp"
+                                    android:layout_marginEnd="4dp"
+                                    android:backgroundTint="#243042"
+                                    android:insetTop="0dp"
+                                    android:insetBottom="0dp"
+                                    android:paddingHorizontal="10dp"
+                                    android:text="Модули ЕГЭ"
+                                    android:textAllCaps="false"
+                                    android:textColor="#38BDF8"
+                                    android:textSize="11sp"
+                                    app:cornerRadius="16dp" />
+
+                                <Button
+                                    android:id="@+id/btnIneqPreset6"
+                                    style="@style/Widget.MaterialComponents.Button"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="32dp"
+                                    android:layout_marginEnd="4dp"
+                                    android:backgroundTint="#243042"
+                                    android:insetTop="0dp"
+                                    android:insetBottom="0dp"
+                                    android:paddingHorizontal="10dp"
+                                    android:text="Изолир. корень"
+                                    android:textAllCaps="false"
+                                    android:textColor="#38BDF8"
+                                    android:textSize="11sp"
+                                    app:cornerRadius="16dp" />
+
+                                <Button
+                                    android:id="@+id/btnIneqPreset7"
+                                    style="@style/Widget.MaterialComponents.Button"
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="32dp"
+                                    android:backgroundTint="#243042"
+                                    android:insetTop="0dp"
+                                    android:insetBottom="0dp"
+                                    android:paddingHorizontal="10dp"
+                                    android:text="Модуль-лог"
+                                    android:textAllCaps="false"
+                                    android:textColor="#38BDF8"
+                                    android:textSize="11sp"
+                                    app:cornerRadius="16dp" />
+                            </LinearLayout>
+                        </HorizontalScrollView>
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- КАРТОЧКА 2: ИНТЕРАКТИВНАЯ ЧИСЛОВАЯ ПРЯМАЯ -->
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/cardIneqNumberLine"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    app:cardBackgroundColor="#1E293B"
+                    app:cardCornerRadius="12dp"
+                    app:cardElevation="0dp"
+                    app:strokeColor="#334155"
+                    app:strokeWidth="1dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="8dp">
+
+                        <TextView
+                            android:id="@+id/tvIneqNumberLineLabel"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Числовая прямая (метод интервалов и ОДЗ):"
+                            android:textColor="#94A3B8"
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
+
+                        <com.example.calculator.NumberLineView
+                            android:id="@+id/ineqNumberLineView"
+                            android:layout_width="match_parent"
+                            android:layout_height="185dp"
+                            android:layout_marginTop="4dp" />
+
+                        <TextView
+                            android:id="@+id/tvIneqNumberLineHint"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:gravity="center"
+                            android:text="Нажмите на точку или интервал для подробностей • Свайп для прокрутки"
+                            android:textColor="#64748B"
+                            android:textSize="10sp" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- КАРТОЧКА 3: РЕЗУЛЬТАТ И ОДЗ -->
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/cardIneqResult"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    app:cardBackgroundColor="#1E293B"
+                    app:cardCornerRadius="12dp"
+                    app:cardElevation="0dp"
+                    app:strokeColor="#334155"
+                    app:strokeWidth="1dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="12dp">
+
+                        <TextView
+                            android:id="@+id/tvIneqResultHeader"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Ответ и ОДЗ:"
+                            android:textColor="#94A3B8"
+                            android:textSize="12sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/tvIneqAnswer"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:textColor="#10B981"
+                            android:textSize="16sp"
+                            android:textStyle="bold"
+                            android:textIsSelectable="true"
+                            tools:text="x ∈ (-1; 2]" />
+
+                        <TextView
+                            android:id="@+id/tvIneqOdz"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:textColor="#94A3B8"
+                            android:textSize="13sp"
+                            android:textIsSelectable="true"
+                            tools:text="ОДЗ: x ≠ -1" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnIneqSteps"
+                            style="@style/Widget.MaterialComponents.Button"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:backgroundTint="#1E293B"
+                            android:text="📖 Шаги решения"
+                            android:textAllCaps="false"
+                            android:textColor="#38BDF8"
+                            android:textSize="13sp"
+                            android:textStyle="bold"
+                            android:visibility="gone"
+                            app:cornerRadius="8dp"
+                            app:strokeColor="#334155"
+                            app:strokeWidth="1dp" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+            </LinearLayout>
+        </ScrollView>
+
+        <TextView
+            android:id="@+id/btnIneqToggleKeyboard"
+            android:layout_width="42dp"
+            android:layout_height="34dp"
+            android:layout_gravity="bottom|end"
+            android:layout_marginEnd="12dp"
+            android:layout_marginBottom="8dp"
+            android:clickable="true"
+            android:elevation="3dp"
+            android:focusable="true"
+            android:gravity="center"
+            android:text="▼"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+    </FrameLayout>
+
+    <!-- ВСТРОЕННАЯ СВОРАЧИВАЕМАЯ КЛАВИАТУРА НЕРАВЕНСТВ -->
+    <LinearLayout
+        android:id="@+id/layoutIneqKeypad"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#0A0E17"
+        android:orientation="vertical"
+        android:paddingHorizontal="4dp"
+        android:paddingTop="3dp"
+        android:paddingBottom="6dp">
+
+        <!-- Ряд 0: ◀ | ▲ | ▼ | ▶ (4 cols, 32dp) -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="32dp"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btnIneqLeft"
+                style="@style/Widget.MaterialComponents.Button"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="1.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#243042"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:maxLines="1"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:singleLine="true"
+                android:text="◀"
+                android:textAllCaps="false"
+                android:textColor="#38BDF8"
+                android:textSize="13sp"
+                app:cornerRadius="6dp" />
+
+            <Button
+                android:id="@+id/btnIneqUp"
+                style="@style/Widget.MaterialComponents.Button"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="1.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#243042"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:maxLines="1"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:singleLine="true"
+                android:text="▲"
+                android:textAllCaps="false"
+                android:textColor="#38BDF8"
+                android:textSize="13sp"
+                app:cornerRadius="6dp" />
+
+            <Button
+                android:id="@+id/btnIneqDown"
+                style="@style/Widget.MaterialComponents.Button"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="1.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#243042"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:maxLines="1"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:singleLine="true"
+                android:text="▼"
+                android:textAllCaps="false"
+                android:textColor="#38BDF8"
+                android:textSize="13sp"
+                app:cornerRadius="6dp" />
+
+            <Button
+                android:id="@+id/btnIneqRight"
+                style="@style/Widget.MaterialComponents.Button"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="1.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#243042"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:maxLines="1"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:singleLine="true"
+                android:text="▶"
+                android:textAllCaps="false"
+                android:textColor="#38BDF8"
+                android:textSize="13sp"
+                app:cornerRadius="6dp" />
+        </LinearLayout>
+
+        <!-- Ряд 1: < | > | ≤ | ≥ | ( | ) (6 cols, 36dp) -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="36dp"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btnIneqLt"
+                style="@style/Widget.MaterialComponents.Button"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="1.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#243042"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:maxLines="1"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:singleLine="true"
+                android:text="&lt;"
+                android:textAllCaps="false"
+                android:textColor="#38BDF8"
+                android:textSize="14sp"
+                app:cornerRadius="6dp" />
+
+            <Button
+                android:id="@+id/btnIneqGt"
+                style="@style/Widget.MaterialComponents.Button"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="1.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#243042"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:maxLines="1"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:singleLine="true"
+                android:text="&gt;"
+                android:textAllCaps="false"
+                android:textColor="#38BDF8"
+                android:textSize="14sp"
+                app:cornerRadius="6dp" />
+
+            <Button
+                android:id="@+id/btnIneqLe"
+                style="@style/Widget.MaterialComponents.Button"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="1.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#243042"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:maxLines="1"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:singleLine="true"
+                android:text="≤"
+                android:textAllCaps="false"
+                android:textColor="#38BDF8"
+                android:textSize="14sp"
+                app:cornerRadius="6dp" />
+
+            <Button
+                android:id="@+id/btnIneqGe"
+                style="@style/Widget.MaterialComponents.Button"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="1.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#243042"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:maxLines="1"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:singleLine="true"
+                android:text="≥"
+                android:textAllCaps="false"
+                android:textColor="#38BDF8"
+                android:textSize="14sp"
+                app:cornerRadius="6dp" />
+
+            <Button
+                android:id="@+id/btnIneqLParen"
+                style="@style/Widget.MaterialComponents.Button"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="1.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#243042"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:maxLines="1"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:singleLine="true"
+                android:text="("
+                android:textAllCaps="false"
+                android:textColor="#38BDF8"
+                android:textSize="14sp"
+                app:cornerRadius="6dp" />
+
+            <Button
+                android:id="@+id/btnIneqRParen"
+                style="@style/Widget.MaterialComponents.Button"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="1.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#243042"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:maxLines="1"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:singleLine="true"
+                android:text=")"
+                android:textAllCaps="false"
+                android:textColor="#38BDF8"
+                android:textSize="14sp"
+                app:cornerRadius="6dp" />
+        </LinearLayout>
+
+        <!-- Ряд 2: ■/□ | log□ | √ | x^□ | | | | x (6 cols, 36dp) -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="36dp"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btnIneqFrac"
+                style="@style/Widget.MaterialComponents.Button"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="1.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#243042"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:maxLines="1"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:singleLine="true"
+                android:text="■/□"
+                android:textAllCaps="false"
+                android:textColor="#38BDF8"
+                android:textSize="13sp"
+                app:cornerRadius="6dp" />
+
+            <Button
+                android:id="@+id/btnIneqLog"
+                style="@style/Widget.MaterialComponents.Button"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="1.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#243042"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:maxLines="1"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:singleLine="true"
+                android:text="log□"
+                android:textAllCaps="false"
+                android:textColor="#38BDF8"
+                android:textSize="13sp"
+                app:cornerRadius="6dp" />
+
+            <Button
+                android:id="@+id/btnIneqSqrt"
+                style="@style/Widget.MaterialComponents.Button"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="1.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#243042"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:maxLines="1"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:singleLine="true"
+                android:text="√"
+                android:textAllCaps="false"
+                android:textColor="#38BDF8"
+                android:textSize="14sp"
+                app:cornerRadius="6dp" />
+
+            <Button
+                android:id="@+id/btnIneqPower"
+                style="@style/Widget.MaterialComponents.Button"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="1.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#243042"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:maxLines="1"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:singleLine="true"
+                android:text="x^□"
+                android:textAllCaps="false"
+                android:textColor="#38BDF8"
+                android:textSize="13sp"
+                app:cornerRadius="6dp" />
+
+            <Button
+                android:id="@+id/btnIneqAbs"
+                style="@style/Widget.MaterialComponents.Button"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="1.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#243042"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:maxLines="1"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:singleLine="true"
+                android:text="| |"
+                android:textAllCaps="false"
+                android:textColor="#38BDF8"
+                android:textSize="13sp"
+                app:cornerRadius="6dp" />
+
+            <Button
+                android:id="@+id/btnIneqX"
+                style="@style/Widget.MaterialComponents.Button"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="1.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#243042"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:maxLines="1"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:singleLine="true"
+                android:text="x"
+                android:textAllCaps="false"
+                android:textColor="#F59E0B"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                app:cornerRadius="6dp" />
+        </LinearLayout>
+
+        <!-- Ряд 3: 7 | 8 | 9 | ÷ | DEL (5 cols, 40dp) -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btnIneq7"
+                style="@style/Widget.MaterialComponents.Button"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="1.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#1A222D"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:maxLines="1"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:singleLine="true"
+                android:text="7"
+                android:textColor="#FFFFFF"
+                android:textSize="15sp"
+                app:cornerRadius="6dp" />
+
+            <Button
+                android:id="@+id/btnIneq8"
+                style="@style/Widget.MaterialComponents.Button"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="1.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#1A222D"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:maxLines="1"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:singleLine="true"
+                android:text="8"
+                android:textColor="#FFFFFF"
+                android:textSize="15sp"
+                app:cornerRadius="6dp" />
+
+            <Button
+                android:id="@+id/btnIneq9"
+                style="@style/Widget.MaterialComponents.Button"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="1.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#1A222D"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:maxLines="1"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:singleLine="true"
+                android:text="9"
+                android:textColor="#FFFFFF"
+                android:textSize="15sp"
+                app:cornerRadius="6dp" />
+
+            <Button
+                android:id="@+id/btnIneqDiv"
+                style="@style/Widget.MaterialComponents.Button"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="1.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#243042"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:maxLines="1"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:singleLine="true"
+                android:text="÷"
+                android:textAllCaps="false"
+                android:textColor="#38BDF8"
+                android:textSize="15sp"
+                app:cornerRadius="6dp" />
+
+            <Button
+                android:id="@+id/btnIneqDel"
+                style="@style/Widget.MaterialComponents.Button"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="1.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#243042"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:maxLines="1"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:singleLine="true"
+                android:text="DEL"
+                android:textAllCaps="false"
+                android:textColor="#EF4444"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                app:cornerRadius="6dp" />
+        </LinearLayout>
+
+        <!-- Ряд 4: 4 | 5 | 6 | × | AC (5 cols, 40dp) -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btnIneq4"
+                style="@style/Widget.MaterialComponents.Button"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="1.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#1A222D"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:maxLines="1"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:singleLine="true"
+                android:text="4"
+                android:textColor="#FFFFFF"
+                android:textSize="15sp"
+                app:cornerRadius="6dp" />
+
+            <Button
+                android:id="@+id/btnIneq5"
+                style="@style/Widget.MaterialComponents.Button"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="1.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#1A222D"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:maxLines="1"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:singleLine="true"
+                android:text="5"
+                android:textColor="#FFFFFF"
+                android:textSize="15sp"
+                app:cornerRadius="6dp" />
+
+            <Button
+                android:id="@+id/btnIneq6"
+                style="@style/Widget.MaterialComponents.Button"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="1.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#1A222D"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:maxLines="1"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:singleLine="true"
+                android:text="6"
+                android:textColor="#FFFFFF"
+                android:textSize="15sp"
+                app:cornerRadius="6dp" />
+
+            <Button
+                android:id="@+id/btnIneqMul"
+                style="@style/Widget.MaterialComponents.Button"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="1.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#243042"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:maxLines="1"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:singleLine="true"
+                android:text="×"
+                android:textAllCaps="false"
+                android:textColor="#38BDF8"
+                android:textSize="15sp"
+                app:cornerRadius="6dp" />
+
+            <Button
+                android:id="@+id/btnIneqAc"
+                style="@style/Widget.MaterialComponents.Button"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="1.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#243042"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:maxLines="1"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:singleLine="true"
+                android:text="AC"
+                android:textAllCaps="false"
+                android:textColor="#EF4444"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                app:cornerRadius="6dp" />
+        </LinearLayout>
+
+        <!-- Ряд 5: 1 | 2 | 3 | − | x² (5 cols, 40dp) -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btnIneq1"
+                style="@style/Widget.MaterialComponents.Button"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="1.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#1A222D"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:maxLines="1"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:singleLine="true"
+                android:text="1"
+                android:textColor="#FFFFFF"
+                android:textSize="15sp"
+                app:cornerRadius="6dp" />
+
+            <Button
+                android:id="@+id/btnIneq2"
+                style="@style/Widget.MaterialComponents.Button"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="1.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#1A222D"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:maxLines="1"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:singleLine="true"
+                android:text="2"
+                android:textColor="#FFFFFF"
+                android:textSize="15sp"
+                app:cornerRadius="6dp" />
+
+            <Button
+                android:id="@+id/btnIneq3"
+                style="@style/Widget.MaterialComponents.Button"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="1.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#1A222D"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:maxLines="1"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:singleLine="true"
+                android:text="3"
+                android:textColor="#FFFFFF"
+                android:textSize="15sp"
+                app:cornerRadius="6dp" />
+
+            <Button
+                android:id="@+id/btnIneqMinus"
+                style="@style/Widget.MaterialComponents.Button"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="1.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#243042"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:maxLines="1"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:singleLine="true"
+                android:text="−"
+                android:textAllCaps="false"
+                android:textColor="#38BDF8"
+                android:textSize="15sp"
+                app:cornerRadius="6dp" />
+
+            <Button
+                android:id="@+id/btnIneqSq"
+                style="@style/Widget.MaterialComponents.Button"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="1.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#243042"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:maxLines="1"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:singleLine="true"
+                android:text="x²"
+                android:textAllCaps="false"
+                android:textColor="#38BDF8"
+                android:textSize="13sp"
+                app:cornerRadius="6dp" />
+        </LinearLayout>
+
+        <!-- Ряд 6: 0 | . | ln | + | Решить (5 cols, 40dp) -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btnIneq0"
+                style="@style/Widget.MaterialComponents.Button"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="1.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#1A222D"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:maxLines="1"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:singleLine="true"
+                android:text="0"
+                android:textColor="#FFFFFF"
+                android:textSize="15sp"
+                app:cornerRadius="6dp" />
+
+            <Button
+                android:id="@+id/btnIneqDot"
+                style="@style/Widget.MaterialComponents.Button"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="1.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#1A222D"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:maxLines="1"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:singleLine="true"
+                android:text="."
+                android:textColor="#FFFFFF"
+                android:textSize="15sp"
+                app:cornerRadius="6dp" />
+
+            <Button
+                android:id="@+id/btnIneqLn"
+                style="@style/Widget.MaterialComponents.Button"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="1.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#243042"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:maxLines="1"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:singleLine="true"
+                android:text="ln"
+                android:textAllCaps="false"
+                android:textColor="#38BDF8"
+                android:textSize="13sp"
+                app:cornerRadius="6dp" />
+
+            <Button
+                android:id="@+id/btnIneqPlus"
+                style="@style/Widget.MaterialComponents.Button"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="1.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#243042"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:maxLines="1"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:singleLine="true"
+                android:text="+"
+                android:textAllCaps="false"
+                android:textColor="#38BDF8"
+                android:textSize="15sp"
+                app:cornerRadius="6dp" />
+
+            <Button
+                android:id="@+id/btnIneqKeypadSolve"
+                style="@style/Widget.MaterialComponents.Button"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_margin="1.5dp"
+                android:layout_weight="1"
+                android:backgroundTint="#10B981"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:insetLeft="0dp"
+                android:insetTop="0dp"
+                android:insetRight="0dp"
+                android:insetBottom="0dp"
+                android:maxLines="1"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:singleLine="true"
+                android:text="Решить"
+                android:textAllCaps="false"
+                android:textColor="#FFFFFF"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                app:cornerRadius="6dp" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

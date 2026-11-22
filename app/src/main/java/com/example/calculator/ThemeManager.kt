@@ -83,6 +83,16 @@ object ThemeManager {
             }
         }
 
+        rootLayout.findViewById<TextView>(R.id.btnOpenScanner)?.apply {
+            setTextColor(if (isDark) Color.parseColor("#10B981") else Color.parseColor("#059669"))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = 20f * dp
+                setColor(if (isDark) COLOR_DARK_PANEL else COLOR_LIGHT_PANEL)
+                setStroke((1.5f * dp).toInt(), if (isDark) Color.parseColor("#10B981") else Color.parseColor("#059669"))
+            }
+        }
+
         rootLayout.findViewById<TextView>(R.id.btnCalcThemeToggle)?.apply {
             text = if (isDark) "☀" else "🌙"
             setTextColor(if (isDark) Color.parseColor("#F59E0B") else Color.parseColor("#0F172A"))
@@ -99,14 +109,14 @@ object ThemeManager {
         rootLayout.findViewById<TextView>(R.id.tvHubSubtitle)?.setTextColor(if (isDark) COLOR_DARK_TEXT_SECONDARY else COLOR_LIGHT_TEXT_SECONDARY)
         rootLayout.findViewById<TextView>(R.id.tvHubFooter)?.setTextColor(if (isDark) Color.parseColor("#64748B") else Color.parseColor("#94A3B8"))
 
-        listOf(R.id.cardModeCalc, R.id.cardModeSystem, R.id.cardModeGraph, R.id.cardModeMatrix, R.id.cardModeTrig, R.id.cardModeSection3D, R.id.cardModeConverter).forEach { cardId ->
+        listOf(R.id.cardModeCalc, R.id.cardModeSystem, R.id.cardModeGraph, R.id.cardModeMatrix, R.id.cardModeTrig, R.id.cardModeSection3D, R.id.cardModeConverter, R.id.cardModeInequality).forEach { cardId ->
             rootLayout.findViewById<MaterialCardView>(cardId)?.let { card ->
                 card.setCardBackgroundColor(if (isDark) COLOR_DARK_PANEL else COLOR_LIGHT_PANEL)
                 card.strokeColor = if (isDark) COLOR_DARK_BORDER else COLOR_LIGHT_BORDER
             }
         }
 
-        listOf(R.id.badgeModeCalc, R.id.badgeModeSystem, R.id.badgeModeGraph, R.id.badgeModeMatrix, R.id.badgeModeTrig, R.id.badgeModeSection3D, R.id.badgeModeConverter).forEach { badgeId ->
+        listOf(R.id.badgeModeCalc, R.id.badgeModeSystem, R.id.badgeModeGraph, R.id.badgeModeMatrix, R.id.badgeModeTrig, R.id.badgeModeSection3D, R.id.badgeModeConverter, R.id.badgeModeInequality).forEach { badgeId ->
             rootLayout.findViewById<TextView>(badgeId)?.let { badge ->
                 badge.background = GradientDrawable().apply {
                     shape = GradientDrawable.RECTANGLE
@@ -117,7 +127,7 @@ object ThemeManager {
             }
         }
 
-        listOf(R.id.tvModeCalcTitle, R.id.tvModeSystemTitle, R.id.tvModeGraphTitle, R.id.tvModeMatrixTitle, R.id.tvModeTrigTitle, R.id.tvModeSection3DTitle, R.id.tvModeConverterTitle).forEach {
+        listOf(R.id.tvModeCalcTitle, R.id.tvModeSystemTitle, R.id.tvModeGraphTitle, R.id.tvModeMatrixTitle, R.id.tvModeTrigTitle, R.id.tvModeSection3DTitle, R.id.tvModeConverterTitle, R.id.tvModeInequalityTitle).forEach {
             rootLayout.findViewById<TextView>(it)?.setTextColor(if (isDark) COLOR_DARK_TEXT_PRIMARY else COLOR_LIGHT_TEXT_PRIMARY)
         }
         listOf(R.id.tvModeCalcDesc, R.id.tvModeSystemDesc, R.id.tvModeGraphDesc, R.id.tvModeMatrixDesc, R.id.tvModeTrigDesc, R.id.tvModeSection3DDesc, R.id.tvModeConverterDesc).forEach {

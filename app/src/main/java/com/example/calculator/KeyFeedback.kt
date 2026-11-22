@@ -2,6 +2,8 @@ package com.example.calculator
 
 import android.content.Context
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
@@ -100,6 +102,16 @@ object KeyFeedback {
     fun bindCrispKey(view: View, isHeavy: Boolean = false, onClick: (View) -> Unit) {
         view.bindCrispKey(isHeavy, onClick)
     }
+
+    fun bindRepeatingCrispKey(
+        view: View,
+        isHeavy: Boolean = false,
+        initialDelayMs: Long = 350L,
+        repeatIntervalMs: Long = 55L,
+        onStep: () -> Boolean
+    ) {
+        view.bindRepeatingCrispKey(isHeavy, initialDelayMs, repeatIntervalMs, onStep)
+    }
 }
 
 fun View.bindCrispKey(isHeavy: Boolean = false, onClick: (View) -> Unit) {
@@ -117,4 +129,64 @@ fun View.bindCrispKey(isHeavy: Boolean = false, onClick: (View) -> Unit) {
         false
     }
     this.setOnClickListener { onClick(it) }
+}
+
+fun View.bindRepeatingCrispKey(
+    isHeavy: Boolean = false,
+    initialDelayMs: Long = 350L,
+    repeatIntervalMs: Long = 55L,
+    onStep: () -> Boolean
+) {
+    this.stateListAnimator = null
+    val handler = Handler(Looper.getMainLooper())
+    var didRepeat = false
+
+    var repeatRunnable: Runnable? = null
+    repeatRunnable = Runnable {
+        didRepeat = true
+        val progressed = onStep()
+        if (progressed) {
+            KeyFeedback.trigger(this, isHeavy = false)
+            repeatRunnable?.let { handler.postDelayed(it, repeatIntervalMs) }
+        }
+    }
+
+    val attachListener = object : View.OnAttachStateChangeListener {
+        override fun onViewAttachedToWindow(v: View) {}
+        override fun onViewDetachedFromWindow(v: View) {
+            repeatRunnable?.let { handler.removeCallbacks(it) }
+        }
+    }
+    this.addOnAttachStateChangeListener(attachListener)
+
+    this.setOnTouchListener { v, event ->
+        when (event.action) {
+            MotionEvent.ACTION_DOWN -> {
+                didRepeat = false
+                KeyFeedback.trigger(v, isHeavy)
+                v.animate().scaleX(0.96f).scaleY(0.96f).setDuration(35).start()
+                repeatRunnable?.let {
+                    handler.removeCallbacks(it)
+                    handler.postDelayed(it, initialDelayMs)
+                }
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (event.x < 0 || event.x > v.width || event.y < 0 || event.y > v.height) {
+                    repeatRunnable?.let { handler.removeCallbacks(it) }
+                    v.animate().scaleX(1.0f).scaleY(1.0f).setDuration(35).start()
+                }
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                repeatRunnable?.let { handler.removeCallbacks(it) }
+                v.animate().scaleX(1.0f).scaleY(1.0f).setDuration(35).start()
+            }
+        }
+        false
+    }
+
+    this.setOnClickListener {
+        if (!didRepeat) {
+            onStep()
+        }
+    }
 }

@@ -239,6 +239,10 @@ class EquationSystemSolver(
                 collectVariables(node.n, set)
                 collectVariables(node.k, set)
             }
+            is CasEngine.Node.LogBase -> {
+                collectVariables(node.base, set)
+                collectVariables(node.arg, set)
+            }
             is CasEngine.Node.Num, is CasEngine.Node.Approx -> {}
         }
     }
@@ -298,6 +302,11 @@ class EquationSystemSolver(
                         else -> null
                     }
                 } else null
+            }
+            is CasEngine.Node.LogBase -> {
+                val b = evalNodeFraction(node.base, vars) ?: return null
+                val a = evalNodeFraction(node.arg, vars) ?: return null
+                casEngine.findExactLogFraction(b, a)
             }
             else -> null
         }
@@ -362,6 +371,12 @@ class EquationSystemSolver(
                         else -> Double.NaN
                     }
                 }
+            }
+            is CasEngine.Node.LogBase -> {
+                val b = evalNodeDouble(node.base, vars)
+                val a = evalNodeDouble(node.arg, vars)
+                if (b <= 0.0 || abs(b - 1.0) <= 1e-12 || a <= 0.0 || b.isNaN() || a.isNaN()) Double.NaN
+                else ln(a) / ln(b)
             }
         }
     }

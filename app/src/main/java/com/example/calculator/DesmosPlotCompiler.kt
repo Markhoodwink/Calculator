@@ -59,6 +59,7 @@ object DesmosPlotCompiler {
                 is CasEngine.Node.Sqrt -> traverse(node.inner)
                 is CasEngine.Node.Func -> traverse(node.arg)
                 is CasEngine.Node.Comb -> { traverse(node.n); traverse(node.k) }
+                is CasEngine.Node.LogBase -> { traverse(node.base); traverse(node.arg) }
             }
         }
         traverse(ast)
@@ -250,6 +251,12 @@ object DesmosPlotCompiler {
                         else -> Double.NaN
                     }
                 }
+            }
+            is CasEngine.Node.LogBase -> {
+                val b = evalNode(node.base, xVal, yVal, params)
+                val a = evalNode(node.arg, xVal, yVal, params)
+                if (b <= 0.0 || abs(b - 1.0) <= 1e-12 || a <= 0.0 || b.isNaN() || a.isNaN()) Double.NaN
+                else ln(a) / ln(b)
             }
         }
     }

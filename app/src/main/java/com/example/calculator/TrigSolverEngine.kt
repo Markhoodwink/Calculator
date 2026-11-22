@@ -158,10 +158,10 @@ object TrigSolverEngine {
             .replace("С", "c")
             .replace("х", "x")
             .replace("Х", "x")
-            .replace("tg(", "tan(")
             .replace("ctg(", "cot(")
-            .replace("tg", "tan")
+            .replace("tg(", "tan(")
             .replace("ctg", "cot")
+            .replace("tg", "tan")
 
         // sin²(x) или sin^2(x) -> (sin(x))^2
         val supMap = mapOf('⁰' to '0', '¹' to '1', '²' to '2', '³' to '3', '⁴' to '4', '⁵' to '5')
@@ -195,18 +195,108 @@ object TrigSolverEngine {
             "($fn($arg))^$p"
         }
 
-        // cot(arg) -> (cos(arg)/sin(arg))
-        val cotRegex = Regex("""cot\(([^()]+)\)""")
-        var prevS = ""
-        while (s != prevS) {
-            prevS = s
-            s = cotRegex.replace(s) { m ->
-                val arg = m.groupValues[1]
-                "(cos($arg)/sin($arg))"
+        s = replaceCotAndDivisions(s)
+        return s
+    }
+
+    private fun replaceCotAndDivisions(input: String): String {
+        var s = input
+        var changed = true
+        while (changed) {
+            changed = false
+
+            // 1. Check for 1/tan(arg) or (1)/(tan(arg)) or 1/(tan(arg))
+            var idxTan = s.indexOf("tan(")
+            while (idxTan != -1) {
+                val endTan = findMatchingParen(s, idxTan + 3)
+                if (endTan != -1) {
+                    val arg = s.substring(idxTan + 4, endTan)
+                    val prefix = s.substring(0, idxTan).trimEnd()
+                    val isDiv = prefix.endsWith("/") || prefix.endsWith("/(") || prefix.endsWith("/((")
+                    if (isDiv) {
+                        val slashIdx = prefix.lastIndexOf('/')
+                        val numPart = prefix.substring(0, slashIdx).trim()
+                        if (numPart == "1" || numPart == "(1)" || numPart == "((1))" || numPart.endsWith("1") || numPart.endsWith("1)")) {
+                            val startIdx = maxOf(0, prefix.lastIndexOf('1'))
+                            val realStart = if (startIdx > 0 && prefix[startIdx - 1] == '(') {
+                                if (startIdx > 1 && prefix[startIdx - 2] == '(') startIdx - 2 else startIdx - 1
+                            } else startIdx
+                            var endIdx = endTan
+                            if (endIdx + 1 < s.length && s[endIdx + 1] == ')') {
+                                endIdx++
+                                if (endIdx + 1 < s.length && s[endIdx + 1] == ')') {
+                                    endIdx++
+                                }
+                            }
+                            s = s.substring(0, realStart) + "(cos($arg)/sin($arg))" + s.substring(endIdx + 1)
+                            changed = true
+                            break
+                        }
+                    }
+                }
+                idxTan = s.indexOf("tan(", idxTan + 4)
+            }
+            if (changed) continue
+
+            // 2. Check for 1/cot(arg) or (1)/(cot(arg))
+            var idxCot = s.indexOf("cot(")
+            while (idxCot != -1) {
+                val endCot = findMatchingParen(s, idxCot + 3)
+                if (endCot != -1) {
+                    val arg = s.substring(idxCot + 4, endCot)
+                    val prefix = s.substring(0, idxCot).trimEnd()
+                    val isDiv = prefix.endsWith("/") || prefix.endsWith("/(") || prefix.endsWith("/((")
+                    if (isDiv) {
+                        val slashIdx = prefix.lastIndexOf('/')
+                        val numPart = prefix.substring(0, slashIdx).trim()
+                        if (numPart == "1" || numPart == "(1)" || numPart == "((1))" || numPart.endsWith("1") || numPart.endsWith("1)")) {
+                            val startIdx = maxOf(0, prefix.lastIndexOf('1'))
+                            val realStart = if (startIdx > 0 && prefix[startIdx - 1] == '(') {
+                                if (startIdx > 1 && prefix[startIdx - 2] == '(') startIdx - 2 else startIdx - 1
+                            } else startIdx
+                            var endIdx = endCot
+                            if (endIdx + 1 < s.length && s[endIdx + 1] == ')') {
+                                endIdx++
+                                if (endIdx + 1 < s.length && s[endIdx + 1] == ')') {
+                                    endIdx++
+                                }
+                            }
+                            s = s.substring(0, realStart) + "(sin($arg)/cos($arg))" + s.substring(endIdx + 1)
+                            changed = true
+                            break
+                        }
+                    }
+                }
+                idxCot = s.indexOf("cot(", idxCot + 4)
+            }
+            if (changed) continue
+
+            // 3. Check for bare cot(arg)
+            idxCot = s.indexOf("cot(")
+            if (idxCot != -1) {
+                val endCot = findMatchingParen(s, idxCot + 3)
+                if (endCot != -1) {
+                    val arg = s.substring(idxCot + 4, endCot)
+                    s = s.substring(0, idxCot) + "(cos($arg)/sin($arg))" + s.substring(endCot + 1)
+                    changed = true
+                    continue
+                }
             }
         }
-
         return s
+    }
+
+    private fun findMatchingParen(s: String, startIdx: Int): Int {
+        if (startIdx >= s.length || s[startIdx] != '(') return -1
+        var depth = 0
+        for (i in startIdx until s.length) {
+            if (s[i] == '(') depth++
+            else if (s[i] == ')') {
+                depth--
+                if (depth == 0) return i
+            }
+        }
+        return -1
     }
 
     /**
@@ -822,6 +912,38 @@ object TrigSolverEngine {
         val n = roots.size
         val used = BooleanArray(n)
         val result = mutableListOf<TrigRootSeries>()
+
+        // 0. πk/2 merging: 4 roots r_i, r_i + π/2, r_i + π, r_i + 3π/2
+        for (i in 0 until n) {
+            if (used[i]) continue
+            val rI = roots[i]
+            var matchHalf1 = -1
+            var matchPi = -1
+            var matchHalf3 = -1
+            for (j in 0 until n) {
+                if (j == i || used[j]) continue
+                val diff = SingleSeries.normalizeAngle(roots[j] - rI)
+                if (abs(diff - Math.PI / 2.0) < 1e-5) matchHalf1 = j
+                else if (abs(diff - Math.PI) < 1e-5) matchPi = j
+                else if (abs(diff - 3.0 * Math.PI / 2.0) < 1e-5) matchHalf3 = j
+            }
+            if (matchHalf1 != -1 && matchPi != -1 && matchHalf3 != -1) {
+                used[i] = true
+                used[matchHalf1] = true
+                used[matchPi] = true
+                used[matchHalf3] = true
+
+                val baseFrac = recognizeRationalPi(rI)
+                val formula = if (baseFrac != null) {
+                    if (baseFrac.num == 0L) "x = πk/2, k ∈ ℤ"
+                    else "x = ${formatFracPi(baseFrac)} + πk/2, k ∈ ℤ"
+                } else {
+                    "x = ${formatExactAngle(rI)} + πk/2, k ∈ ℤ"
+                }
+                val s = SingleSeries(rI, Math.PI / 2.0, baseFrac, Fraction(1, 2))
+                result.add(TrigRootSeries(formula, listOf(s)))
+            }
+        }
 
         // 1. πk merging: pairs r_j ≈ r_i + π
         for (i in 0 until n) {

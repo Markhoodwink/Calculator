@@ -617,4 +617,109 @@ class ExampleUnitTest {
         assertEquals("300000000", engine.evaluateFull("c").displayFormula)
         assertEquals("1.6 · 10⁻¹⁹", engine.evaluateFull("qₑ").displayFormula)
     }
+
+    @Test
+    fun testFractionalExponentSerialization() {
+        val engine = CasEngine()
+        val res = engine.isolateVariableFull("x^5 = y", "x")
+        assertEquals("x = y^(1/5)", res.displayFormula)
+        assertFalse(res.displayFormula.contains("y^1/5"))
+        assertFalse(res.displayFormula.contains("y^1 / 5"))
+    }
+
+    @Test
+    fun testIncompleteQuadraticSymbolicSimplification() {
+        val engine = CasEngine()
+        val res = engine.isolateVariableFull("x^2 - 2yx + ax = 0", "x")
+        assertTrue(res.displayFormula.contains("0") && res.displayFormula.contains("2y - a"))
+        assertFalse(res.displayFormula.contains("-(-"))
+        assertFalse(res.displayFormula.contains("/ 2"))
+    }
+
+    @Test
+    fun testSymbolicNegationAndLikeTermCombiner() {
+        val engine = CasEngine()
+        val res1 = engine.evaluateFull("(-(-2y + a) - (-2y + a)) / 2")
+        assertEquals("2y - a", res1.displayFormula)
+
+        val res2 = engine.evaluateFull("(-(-2y + a) + (-2y + a)) / 2")
+        assertEquals("0", res2.displayFormula)
+    }
+
+    @Test
+    fun testMultiVariableEquationSolving() {
+        val engine = CasEngine()
+
+        val resY = engine.isolateVariableFull("x^2 - 2xy + ax = 0", "y")
+        assertTrue("Expected y = (x + a) / 2 or y = (a + x) / 2, got: ${resY.displayFormula}",
+            resY.displayFormula == "y = (x + a) / 2" || resY.displayFormula == "y = (a + x) / 2")
+
+        val resA = engine.isolateVariableFull("x^2 - 2xy + ax = 0", "a")
+        assertTrue("Expected a = 2y - x or a = -x + 2y, got: ${resA.displayFormula}",
+            resA.displayFormula == "a = 2y - x" || resA.displayFormula == "a = -x + 2y")
+
+        val resODZ = engine.isolateVariableFull("(y^2 - 4) / (y - 2) = 0", "y")
+        assertEquals("y = -2", resODZ.displayFormula)
+    }
+
+    @Test
+    fun testArbitraryBaseLogarithms() {
+        val engine = CasEngine()
+
+        // 1. engine.evaluateFull("log(2, 8)").displayFormula == "3" with non-empty detailedSteps
+        val res28 = engine.evaluateFull("log(2, 8)")
+        assertEquals("3", res28.displayFormula)
+        assertTrue("Expected non-empty detailedSteps", res28.detailedSteps.isNotEmpty())
+
+        // 2. engine.evaluateFull("log(4, 8)").displayFormula == "3/2" and engine.evaluateFull("log(2, 1/8)").displayFormula == "-3"
+        assertEquals("3/2", engine.evaluateFull("log(4, 8)").displayFormula)
+        assertEquals("-3", engine.evaluateFull("log(2, 1/8)").displayFormula)
+
+        // 3. engine.evaluateFull("log(1, 5)").displayFormula starts with "Ошибка"
+        assertTrue(engine.evaluateFull("log(1, 5)").displayFormula.startsWith("Ошибка"))
+
+        // 4. engine.isolateVariableFull("log(2, x - 1) = 3", "x").displayFormula == "x = 9"
+        assertEquals("x = 9", engine.isolateVariableFull("log(2, x - 1) = 3", "x").displayFormula)
+
+        // 5. engine.isolateVariableFull("log(2, x^2 - 3) = log(2, 2x)", "x").displayFormula == "x = 3"
+        assertEquals("x = 3", engine.isolateVariableFull("log(2, x^2 - 3) = log(2, 2x)", "x").displayFormula)
+    }
+
+    @Test
+    fun testSameBaseAndCommensurableExponentialEquations() {
+        val engine = CasEngine()
+        assertEquals("x = 99", engine.isolateVariableFull("2^x = 2^99", "x").displayFormula)
+        assertEquals("x = 1000", engine.isolateVariableFull("2^x = 2^1000", "x").displayFormula)
+        assertEquals("x = 99/2", engine.isolateVariableFull("4^x = 8^33", "x").displayFormula)
+        assertEquals("x = 99", engine.isolateVariableFull("e^x = e^99", "x").displayFormula)
+    }
+
+    @Test
+    fun testAdvancedLogarithmicEquations() {
+        val engine = CasEngine()
+
+        // 1. log(5, 2 - x) = log(25, x^4) -> x₁ = -2; x₂ = 1
+        val res1 = engine.isolateVariableFull("log(5, 2 - x) = log(25, x^4)", "x")
+        assertFalse(res1.displayFormula.contains("Не удалось"))
+        assertTrue("Expected -2 in result, got ${res1.displayFormula}", res1.displayFormula.contains("-2"))
+        assertTrue("Expected 1 in result, got ${res1.displayFormula}", res1.displayFormula.contains("1"))
+        assertTrue("Expected non-empty detailedSteps", res1.detailedSteps.isNotEmpty())
+
+        // 2. log(-x^2 - 32x + 33, 2x^2 + 136) = 1 / log(-33x, (1 - x)*(x + 33)) -> x₁ = -17/2; x₂ = -8
+        val res2 = engine.isolateVariableFull("log(-x^2 - 32x + 33, 2x^2 + 136) = 1 / log(-33x, (1 - x)*(x + 33))", "x")
+        assertFalse(res2.displayFormula.contains("Не удалось"))
+        assertTrue("Expected -17/2 or -8.5 in result, got ${res2.displayFormula}", res2.displayFormula.contains("-17/2") || res2.displayFormula.contains("-8.5"))
+        assertTrue("Expected -8 in result, got ${res2.displayFormula}", res2.displayFormula.contains("-8"))
+        assertTrue("Expected non-empty detailedSteps", res2.detailedSteps.isNotEmpty())
+
+        // 3. log(2, x - 3) = log(4, x - 1) -> x = 5 (x = 2 extraneous root rejected by ODZ)
+        val res3 = engine.isolateVariableFull("log(2, x - 3) = log(4, x - 1)", "x")
+        assertEquals("x = 5", res3.displayFormula)
+        assertTrue("Expected non-empty detailedSteps", res3.detailedSteps.isNotEmpty())
+
+        // 4. log(1/2, x + 1) = log(2, 1/3) -> x = 2
+        val res4 = engine.isolateVariableFull("log(1/2, x + 1) = log(2, 1/3)", "x")
+        assertEquals("x = 2", res4.displayFormula)
+        assertTrue("Expected non-empty detailedSteps", res4.detailedSteps.isNotEmpty())
+    }
 }

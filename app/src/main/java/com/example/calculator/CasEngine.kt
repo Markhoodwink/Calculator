@@ -74,6 +74,7 @@ class CasEngine {
         operator fun times(o: Fraction) = Fraction(num * o.num, den * o.den).simplify()
         operator fun div(o: Fraction) = Fraction(num * o.den, den * o.num).simplify()
         fun negate() = Fraction(-num, den).simplify()
+        fun invert() = Fraction(den, num).simplify()
         fun toDouble(): Double = num.toDouble() / den.toDouble()
 
         override fun toString(): String {
@@ -296,9 +297,8 @@ class CasEngine {
                 val lStr = if (l.precedence() < 2) "(${l.toExprString()})" else l.toExprString()
                 val rStr = if (r.precedence() < 2) "(${r.toExprString()})" else r.toExprString()
 
-                // FIX 3: «2t», «6a» — без знака «·» между числом и переменной/функцией
                 val canOmitDot = when {
-                    l is Num -> r !is Num  // 2 * x -> "2x", 2 * sqrt(…) -> "2√(…)"
+                    l is Num -> r !is Num && !(r is Pow && r.base is Num) && !(r is Mul && r.l is Num)
                     l is Variable -> r is Variable || r is Func || r is Sqrt || r is Pow
                     else -> false
                 }
@@ -328,7 +328,8 @@ class CasEngine {
             override fun precedence() = 3
             override fun toExprString(): String {
                 val bStr = if (base.precedence() < 3) "(${base.toExprString()})" else base.toExprString()
-                val eStr = if (exp.precedence() < 3) "(${exp.toExprString()})" else exp.toExprString()
+                val wrapExp = exp.precedence() < 3 || (exp is Num && (exp.value.den != 1L || exp.value.num < 0L))
+                val eStr = if (wrapExp) "(${exp.toExprString()})" else exp.toExprString()
                 return "$bStr^$eStr"
             }
         }
@@ -360,6 +361,77 @@ class CasEngine {
                 return "$fn(${n.toExprString()}, ${k.toExprString()})"
             }
         }
+
+        data class LogBase(val base: Node, val arg: Node) : Node() {
+            override fun containsVar(name: String) = base.containsVar(name) || arg.containsVar(name)
+            override fun precedence() = 4
+            override fun toExprString(): String {
+                val bStr = if (base.precedence() < 4) "(${base.toExprString()})" else base.toExprString()
+                return "log_${bStr}(${arg.toExprString()})"
+            }
+        }
+
+        fun collectVars(): Set<String> {
+            val set = mutableSetOf<String>()
+            fun walk(n: Node) {
+                when (n) {
+                    is Node.Variable -> set.add(n.name)
+                    is Node.Add -> { walk(n.l); walk(n.r) }
+                    is Node.Sub -> { walk(n.l); walk(n.r) }
+                    is Node.Mul -> { walk(n.l); walk(n.r) }
+                    is Node.Div -> { walk(n.l); walk(n.r) }
+                    is Node.Pow -> { walk(n.base); walk(n.exp) }
+                    is Node.Sqrt -> walk(n.inner)
+                    is Node.Func -> walk(n.arg)
+                    is Node.LogBase -> { walk(n.base); walk(n.arg) }
+                    else -> {}
+                }
+            }
+            walk(this)
+            return set
+        }
+    }
+
+    fun findExactLogFraction(bFrac: Fraction, aFrac: Fraction): Fraction? {
+        val b = bFrac.simplify()
+        val a = aFrac.simplify()
+        if (a.num <= 0L || b.num <= 0L) return null
+        if (b.num == b.den) return null
+        if (a.num == a.den) return Fraction(0L)
+        if (a == b) return Fraction(1L)
+
+        fun decompose(f: Fraction): Pair<Pair<Long, Long>, Int>? {
+            val s = f.simplify()
+            var num = s.num
+            var den = s.den
+            var sign = 1
+            if (num < den) {
+                val tmp = num
+                num = den
+                den = tmp
+                sign = -1
+            }
+            for (k in 60 downTo 1) {
+                val p = round(num.toDouble().pow(1.0 / k)).toLong()
+                val q = round(den.toDouble().pow(1.0 / k)).toLong()
+                if (p > 0L && q > 0L &&
+                    BigInteger.valueOf(p).pow(k) == BigInteger.valueOf(num) &&
+                    BigInteger.valueOf(q).pow(k) == BigInteger.valueOf(den)) {
+                    return Pair(Pair(p, q), sign * k)
+                }
+            }
+            return null
+        }
+
+        val bDec = decompose(b) ?: return null
+        val aDec = decompose(a) ?: return null
+
+        if (bDec.first == aDec.first) {
+            val kBase = bDec.second
+            val kArg = aDec.second
+            return Fraction(kArg.toLong(), kBase.toLong()).simplify()
+        }
+        return null
     }
 
     fun evalCombinatorics(isPerm: Boolean, n: Long, k: Long): Node {
@@ -403,10 +475,154 @@ class CasEngine {
         return when (n) {
             is Node.Num -> Node.Num(n.value.negate())
             is Node.Approx -> Node.Approx(-n.value)
-            is Node.Sub -> if (isZero(n.l)) n.r else Node.Sub(n.r, n.l)
+            is Node.Add -> simplify(Node.Add(negateNode(n.l), negateNode(n.r)))
+            is Node.Sub -> if (isZero(n.l)) n.r else simplify(Node.Sub(n.r, n.l))
             is Node.Mul -> if (n.l is Node.Num) Node.Mul(Node.Num(n.l.value.negate()), n.r) else if (n.l is Node.Approx) Node.Mul(Node.Approx(-n.l.value), n.r) else Node.Sub(Node.Num(Fraction(0)), n)
             else -> Node.Sub(Node.Num(Fraction(0)), n)
         }
+    }
+
+    private data class SignedTerm(val coeff: Fraction, val basis: Node?)
+
+    private fun extractTerm(node: Node): SignedTerm {
+        return when (node) {
+            is Node.Num -> SignedTerm(node.value, null)
+            is Node.Mul -> {
+                if (node.l is Node.Num) {
+                    val c = node.l.value
+                    val inner = extractTerm(node.r)
+                    if (inner.basis == null) SignedTerm(c * inner.coeff, null)
+                    else SignedTerm(c * inner.coeff, inner.basis)
+                } else if (node.r is Node.Num) {
+                    val c = node.r.value
+                    val inner = extractTerm(node.l)
+                    if (inner.basis == null) SignedTerm(c * inner.coeff, null)
+                    else SignedTerm(c * inner.coeff, inner.basis)
+                } else {
+                    SignedTerm(Fraction(1), node)
+                }
+            }
+            is Node.Sub -> {
+                if (isZero(node.l)) {
+                    val inner = extractTerm(node.r)
+                    SignedTerm(inner.coeff.negate(), inner.basis)
+                } else {
+                    SignedTerm(Fraction(1), node)
+                }
+            }
+            else -> SignedTerm(Fraction(1), node)
+        }
+    }
+
+    private fun flattenAdditive(node: Node, sign: Fraction, terms: MutableList<SignedTerm>) {
+        when (node) {
+            is Node.Add -> {
+                flattenAdditive(node.l, sign, terms)
+                flattenAdditive(node.r, sign, terms)
+            }
+            is Node.Sub -> {
+                flattenAdditive(node.l, sign, terms)
+                flattenAdditive(node.r, sign.negate(), terms)
+            }
+            else -> {
+                val t = extractTerm(node)
+                if (t.coeff.num != 0L) {
+                    terms.add(SignedTerm(t.coeff * sign, t.basis))
+                }
+            }
+        }
+    }
+
+    private fun getBasisKey(basis: Node?): String {
+        if (basis == null) return "__const__"
+        if (basis is Node.Mul) {
+            val factors = mutableListOf<Node>()
+            fun collectFactors(n: Node) {
+                if (n is Node.Mul) {
+                    collectFactors(n.l)
+                    collectFactors(n.r)
+                } else {
+                    factors.add(n)
+                }
+            }
+            collectFactors(basis)
+            val nonNumFactors = factors.filter { it !is Node.Num }
+            if (nonNumFactors.isNotEmpty()) {
+                return nonNumFactors.map { it.toExprString() }.sorted().joinToString(" · ")
+            }
+        }
+        return basis.toExprString()
+    }
+
+    private fun combineAdditiveTerms(node: Node): Node {
+        val rawTerms = mutableListOf<SignedTerm>()
+        flattenAdditive(node, Fraction(1), rawTerms)
+        if (rawTerms.isEmpty()) return Node.Num(Fraction(0))
+
+        val grouped = LinkedHashMap<String, Pair<Node?, Fraction>>()
+        for (t in rawTerms) {
+            val key = getBasisKey(t.basis)
+            val existing = grouped[key]
+            if (existing == null) {
+                grouped[key] = Pair(t.basis, t.coeff)
+            } else {
+                grouped[key] = Pair(existing.first ?: t.basis, existing.second + t.coeff)
+            }
+        }
+
+        val nonZeroTerms = mutableListOf<SignedTerm>()
+        for ((_, pair) in grouped) {
+            if (pair.second.num != 0L) {
+                nonZeroTerms.add(SignedTerm(pair.second, pair.first))
+            }
+        }
+
+        if (nonZeroTerms.isEmpty()) return Node.Num(Fraction(0))
+
+        if (nonZeroTerms.size == 1) {
+            val t = nonZeroTerms.first()
+            if (t.basis == null) return Node.Num(t.coeff)
+            if (t.coeff.num == 1L && t.coeff.den == 1L) return t.basis
+            if (t.coeff.num == -1L && t.coeff.den == 1L) {
+                return if (t.basis is Node.Sub && isZero(t.basis.l)) t.basis.r else negateNode(t.basis)
+            }
+            return Node.Mul(Node.Num(t.coeff), t.basis)
+        }
+
+        nonZeroTerms.sortWith(Comparator { t1, t2 ->
+            val s1 = t1.coeff.num > 0
+            val s2 = t2.coeff.num > 0
+            if (s1 && !s2) -1
+            else if (!s1 && s2) 1
+            else 0
+        })
+
+        fun buildTermNode(t: SignedTerm): Node {
+            if (t.basis == null) return Node.Num(t.coeff)
+            if (t.coeff.num == 1L && t.coeff.den == 1L) return t.basis
+            if (t.coeff.num == -1L && t.coeff.den == 1L) return negateNode(t.basis)
+            return Node.Mul(Node.Num(t.coeff), t.basis)
+        }
+
+        val t0 = nonZeroTerms[0]
+        var acc: Node = if (t0.coeff.num < 0) {
+            val pos = SignedTerm(t0.coeff.negate(), t0.basis)
+            negateNode(buildTermNode(pos))
+        } else {
+            buildTermNode(t0)
+        }
+
+        for (i in 1 until nonZeroTerms.size) {
+            val t = nonZeroTerms[i]
+            if (t.coeff.num < 0) {
+                val pos = SignedTerm(t.coeff.negate(), t.basis)
+                acc = Node.Sub(acc, buildTermNode(pos))
+            } else {
+                acc = Node.Add(acc, buildTermNode(t))
+            }
+        }
+
+        return acc
     }
 
     private fun getDoubleValue(n: Node): Double? {
@@ -525,6 +741,69 @@ class CasEngine {
         }
     }
 
+    private fun getVariableFactors(node: Node): List<String> {
+        return when (node) {
+            is Node.Variable -> listOf(node.name)
+            is Node.Pow -> {
+                if (node.base is Node.Variable && node.exp is Node.Num && node.exp.value.den == 1L && node.exp.value.num >= 1L) {
+                    listOf((node.base as Node.Variable).name)
+                } else emptyList()
+            }
+            is Node.Mul -> getVariableFactors(node.l) + getVariableFactors(node.r)
+            is Node.Sub -> if (isZero(node.l)) getVariableFactors(node.r) else emptyList()
+            else -> emptyList()
+        }
+    }
+
+    private fun extractVarFactor(node: Node, varName: String): Node? {
+        return when (node) {
+            is Node.Variable -> {
+                if (node.name == varName) Node.Num(Fraction(1)) else null
+            }
+            is Node.Pow -> {
+                if (node.base is Node.Variable && (node.base as Node.Variable).name == varName) {
+                    if (node.exp is Node.Num && node.exp.value.den == 1L) {
+                        val n = node.exp.value.num
+                        if (n == 1L) {
+                            Node.Num(Fraction(1))
+                        } else if (n == 2L) {
+                            Node.Variable(varName)
+                        } else if (n > 2L) {
+                            Node.Pow(Node.Variable(varName), Node.Num(Fraction(n - 1L)))
+                        } else null
+                    } else null
+                } else null
+            }
+            is Node.Mul -> {
+                val leftDiv = extractVarFactor(node.l, varName)
+                if (leftDiv != null) {
+                    simplify(Node.Mul(leftDiv, node.r))
+                } else {
+                    val rightDiv = extractVarFactor(node.r, varName)
+                    if (rightDiv != null) {
+                        simplify(Node.Mul(node.l, rightDiv))
+                    } else null
+                }
+            }
+            is Node.Add -> {
+                val leftDiv = extractVarFactor(node.l, varName) ?: return null
+                val rightDiv = extractVarFactor(node.r, varName) ?: return null
+                simplify(Node.Add(leftDiv, rightDiv))
+            }
+            is Node.Sub -> {
+                if (isZero(node.l)) {
+                    val rDiv = extractVarFactor(node.r, varName) ?: return null
+                    simplify(negateNode(rDiv))
+                } else {
+                    val leftDiv = extractVarFactor(node.l, varName) ?: return null
+                    val rightDiv = extractVarFactor(node.r, varName) ?: return null
+                    simplify(Node.Sub(leftDiv, rightDiv))
+                }
+            }
+            else -> null
+        }
+    }
+
     fun simplify(node: Node): Node {
         return when (node) {
             is Node.Num -> node
@@ -549,26 +828,21 @@ class CasEngine {
                         return Node.Approx(lVal + rVal)
                     }
                 }
-                when {
-                    l is Node.Num && r is Node.Num -> {
-                        val d = l.value.toDouble() + r.value.toDouble()
-                        if (abs(d) >= 9e15) Node.Approx(d)
-                        else {
-                            try {
-                                val sumFrac = l.value + r.value
-                                if (abs(sumFrac.num) >= 9_000_000_000_000_000L || abs(sumFrac.den) >= 9_000_000_000_000_000L) {
-                                    Node.Approx(sumFrac.toDouble())
-                                } else Node.Num(sumFrac)
-                            } catch (_: Exception) {
-                                Node.Approx(d)
-                            }
+                if (l is Node.Num && r is Node.Num) {
+                    val d = l.value.toDouble() + r.value.toDouble()
+                    if (abs(d) >= 9e15) return Node.Approx(d)
+                    else {
+                        try {
+                            val sumFrac = l.value + r.value
+                            if (abs(sumFrac.num) >= 9_000_000_000_000_000L || abs(sumFrac.den) >= 9_000_000_000_000_000L) {
+                                return Node.Approx(sumFrac.toDouble())
+                            } else return Node.Num(sumFrac)
+                        } catch (_: Exception) {
+                            return Node.Approx(d)
                         }
                     }
-                    isZero(l) -> r
-                    isZero(r) -> l
-                    l.toExprString() == r.toExprString() -> simplify(Node.Mul(Node.Num(Fraction(2)), l))
-                    else -> Node.Add(l, r)
                 }
+                combineAdditiveTerms(Node.Add(l, r))
             }
             is Node.Sub -> {
                 val l = simplify(node.l)
@@ -580,26 +854,21 @@ class CasEngine {
                         return Node.Approx(lVal - rVal)
                     }
                 }
-                when {
-                    l is Node.Num && r is Node.Num -> {
-                        val d = l.value.toDouble() - r.value.toDouble()
-                        if (abs(d) >= 9e15) Node.Approx(d)
-                        else {
-                            try {
-                                val diffFrac = l.value - r.value
-                                if (abs(diffFrac.num) >= 9_000_000_000_000_000L || abs(diffFrac.den) >= 9_000_000_000_000_000L) {
-                                    Node.Approx(diffFrac.toDouble())
-                                } else Node.Num(diffFrac)
-                            } catch (_: Exception) {
-                                Node.Approx(d)
-                            }
+                if (l is Node.Num && r is Node.Num) {
+                    val d = l.value.toDouble() - r.value.toDouble()
+                    if (abs(d) >= 9e15) return Node.Approx(d)
+                    else {
+                        try {
+                            val diffFrac = l.value - r.value
+                            if (abs(diffFrac.num) >= 9_000_000_000_000_000L || abs(diffFrac.den) >= 9_000_000_000_000_000L) {
+                                return Node.Approx(diffFrac.toDouble())
+                            } else return Node.Num(diffFrac)
+                        } catch (_: Exception) {
+                            return Node.Approx(d)
                         }
                     }
-                    isZero(r) -> l
-                    l.toExprString() == r.toExprString() -> Node.Num(Fraction(0))
-                    r is Node.Num && r.value.num < 0 -> simplify(Node.Add(l, Node.Num(r.value.negate())))
-                    else -> Node.Sub(l, r)
                 }
+                combineAdditiveTerms(Node.Sub(l, r))
             }
             is Node.Mul -> {
                 val l = simplify(node.l)
@@ -671,11 +940,30 @@ class CasEngine {
                 }
 
                 if (r is Node.Num && r.value.num < 0) {
-                    l = negateNode(l)
+                    l = simplify(negateNode(l))
                     r = Node.Num(r.value.negate())
                 } else if (r is Node.Sub && isZero(r.l)) {
-                    l = negateNode(l)
+                    l = simplify(negateNode(l))
                     r = r.r
+                } else if (r is Node.Mul && r.l is Node.Num && r.l.value.num < 0) {
+                    l = simplify(negateNode(l))
+                    r = simplify(negateNode(r))
+                }
+
+                var changed = true
+                while (changed) {
+                    changed = false
+                    val vars = getVariableFactors(r).distinct()
+                    for (v in vars) {
+                        val lDiv = extractVarFactor(l, v)
+                        val rDiv = extractVarFactor(r, v)
+                        if (lDiv != null && rDiv != null) {
+                            l = simplify(lDiv)
+                            r = simplify(rDiv)
+                            changed = true
+                            break
+                        }
+                    }
                 }
 
                 when {
@@ -858,7 +1146,7 @@ class CasEngine {
 
                     val rad = if (isDegreeMode) Math.toRadians(x) else x
 
-                    if (node.fn == "tan") {
+                    if (node.fn == "tan" || node.fn == "tg") {
                         if (isDegreeMode) {
                             val xMod = ((x % 180.0) + 180.0) % 180.0
                             if (abs(xMod - 90.0) < 1e-9) {
@@ -871,11 +1159,18 @@ class CasEngine {
                             }
                         }
                     }
+                    if (node.fn == "cot" || node.fn == "ctg") {
+                        val sinVal = sin(rad)
+                        if (abs(sinVal) < 1e-12) {
+                            throw ArithmeticException("cot не определён (вертикальная асимптота)")
+                        }
+                    }
 
                     val res = when (node.fn) {
                         "sin" -> sin(rad)
                         "cos" -> cos(rad)
-                        "tan" -> tan(rad)
+                        "tan", "tg" -> tan(rad)
+                        "cot", "ctg" -> cos(rad) / sin(rad)
                         "asin" -> if (isDegreeMode) Math.toDegrees(asin(x)) else asin(x)
                         "acos" -> if (isDegreeMode) Math.toDegrees(acos(x)) else acos(x)
                         "atan" -> if (isDegreeMode) Math.toDegrees(atan(x)) else atan(x)
@@ -918,6 +1213,67 @@ class CasEngine {
                     Node.Comb(node.isPerm, sN, sK)
                 }
             }
+            is Node.LogBase -> {
+                val sBase = simplify(node.base)
+                val sArg = simplify(node.arg)
+
+                if (isOne(sArg)) return Node.Num(Fraction(0))
+                if (sArg.toExprString() == sBase.toExprString()) return Node.Num(Fraction(1))
+
+                if (sArg is Node.Pow) {
+                    val argBase = simplify(sArg.base)
+                    if (argBase == sBase || argBase.toExprString() == sBase.toExprString()) {
+                        return simplify(sArg.exp)
+                    }
+                }
+
+                if (sBase is Node.Num && sArg is Node.Num) {
+                    val bFrac = sBase.value
+                    val aFrac = sArg.value
+                    val bVal = bFrac.toDouble()
+                    val aVal = aFrac.toDouble()
+
+                    if (bVal <= 0.0 || abs(bVal - 1.0) <= 1e-12) {
+                        throw ArithmeticException("Основание логарифма должно быть > 0 и ≠ 1")
+                    }
+                    if (aVal <= 0.0) {
+                        throw ArithmeticException("Аргумент логарифма должен быть строго больше 0")
+                    }
+
+                    val exactFrac = findExactLogFraction(bFrac, aFrac)
+                    if (exactFrac != null) {
+                        return Node.Num(exactFrac)
+                    }
+
+                    val res = ln(aVal) / ln(bVal)
+                    if (abs(res - round(res)) < 1e-9) {
+                        return Node.Num(Fraction(round(res).toLong()))
+                    }
+                    if (abs(res) >= 9e15) return Node.Approx(res)
+                    return Node.Num(Fraction.fromDouble(res))
+                }
+
+                val bVal = getDoubleValue(sBase)
+                val aVal = getDoubleValue(sArg)
+                if (bVal != null && aVal != null) {
+                    if (bVal <= 0.0 || abs(bVal - 1.0) <= 1e-12) {
+                        throw ArithmeticException("Основание логарифма должно быть > 0 и ≠ 1")
+                    }
+                    if (aVal <= 0.0) {
+                        throw ArithmeticException("Аргумент логарифма должен быть строго больше 0")
+                    }
+                    val res = ln(aVal) / ln(bVal)
+                    if (abs(res - round(res)) < 1e-9) {
+                        return Node.Num(Fraction(round(res).toLong()))
+                    }
+                    if (abs(res) >= 9e15 || sBase is Node.Approx || sArg is Node.Approx) return Node.Approx(res)
+                    val exactFrac = findExactLogFraction(Fraction.fromDouble(bVal), Fraction.fromDouble(aVal))
+                    if (exactFrac != null) return Node.Num(exactFrac)
+                    return Node.Num(Fraction.fromDouble(res))
+                }
+
+                Node.LogBase(sBase, sArg)
+            }
         }
     }
 
@@ -955,9 +1311,15 @@ class CasEngine {
                 .replace("÷", "/")
                 .replace("³√", "cbrt")
                 .replace("∛", "cbrt")
+                .replace("с", "c")
+                .replace("С", "c")
+                .replace("х", "x")
+                .replace("Х", "x")
+                .replace("п", "π")
+                .replace("П", "π")
 
             val reservedWords = listOf(
-                "comb", "perm", "asin", "acos", "atan", "cbrt", "sqrt", "fact", "sin", "cos", "tan", "log", "ln", "abs",
+                "comb", "perm", "asin", "acos", "atan", "cbrt", "sqrt", "fact", "sin", "cos", "tan", "cot", "ctg", "tg", "log", "ln", "abs",
                 "eps0", "mu0", "k_B", "kB", "Nₐ", "Na", "e₀", "ε₀", "μ₀",
                 "mₑ", "me", "mₚ", "mp", "qₑ", "qe", "pi"
             )
@@ -1153,10 +1515,16 @@ class CasEngine {
                 val start = pos
                 while (pos < src.length && isIdentBodyChar(src[pos])) pos++
                 val name = src.substring(start, pos)
-                val funcs = setOf("sin", "cos", "tan", "asin", "acos", "atan", "log", "ln", "sqrt", "cbrt", "abs")
+                val funcs = setOf("sin", "cos", "tan", "cot", "ctg", "tg", "asin", "acos", "atan", "log", "ln", "sqrt", "cbrt", "abs")
                 if (name in funcs && pos < src.length && src[pos] == '(') {
                     pos++
                     val arg = parseAddSub()
+                    if (name == "log" && pos < src.length && src[pos] == ',') {
+                        pos++
+                        val arg2 = parseAddSub()
+                        if (pos < src.length && src[pos] == ')') pos++
+                        return Node.LogBase(base = arg, arg = arg2)
+                    }
                     if (pos < src.length && src[pos] == ')') pos++
                     return if (name == "sqrt") Node.Sqrt(arg) else Node.Func(name, arg)
                 }
@@ -1347,6 +1715,7 @@ class CasEngine {
                 is Node.Pow -> { collect(n.base); collect(n.exp) }
                 is Node.Sqrt -> collect(n.inner)
                 is Node.Func -> collect(n.arg)
+                is Node.LogBase -> { collect(n.base); collect(n.arg) }
                 else -> {}
             }
         }
@@ -1409,6 +1778,17 @@ class CasEngine {
                     collectDenominators(node.inner)
                 }
                 is Node.Func -> collectDenominators(node.arg)
+                is Node.LogBase -> {
+                    if (node.base.containsVar(target)) {
+                        odzItems.add("${node.base.toExprString()} > 0")
+                        odzItems.add("${node.base.toExprString()} ≠ 1")
+                    }
+                    if (node.arg.containsVar(target)) {
+                        odzItems.add("${node.arg.toExprString()} > 0")
+                    }
+                    collectDenominators(node.base)
+                    collectDenominators(node.arg)
+                }
                 else -> {}
             }
         }
@@ -1792,110 +2172,677 @@ class CasEngine {
         return SolveResult(displayStr, null, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
     }
 
+    private fun transformReciprocalLogs(node: Node, target: String): Pair<Node, Boolean> {
+        when (node) {
+            is Node.Div -> {
+                val num = node.l
+                val denom = node.r
+                val sNum = simplify(num)
+                val sDenom = simplify(denom)
+
+                if (sDenom is Node.LogBase) {
+                    val a = sDenom.base
+                    val b = sDenom.arg
+                    val transformedLog = Node.LogBase(base = b, arg = a)
+                    val isOne = sNum is Node.Num && sNum.value == Fraction(1)
+                    val newExpr = if (isOne) transformedLog else Node.Mul(num, transformedLog)
+                    return Pair(simplify(newExpr), true)
+                } else if (sDenom is Node.Mul) {
+                    var logChild: Node.LogBase? = null
+                    var coeffChild: Node? = null
+                    val lSimp = simplify(sDenom.l)
+                    val rSimp = simplify(sDenom.r)
+                    if (lSimp is Node.LogBase) {
+                        logChild = lSimp
+                        coeffChild = sDenom.r
+                    } else if (rSimp is Node.LogBase) {
+                        logChild = rSimp
+                        coeffChild = sDenom.l
+                    }
+                    if (logChild != null && coeffChild != null) {
+                        val a = logChild.base
+                        val b = logChild.arg
+                        val transformedLog = Node.LogBase(base = b, arg = a)
+                        val divCoeff = Node.Div(num, coeffChild)
+                        val newExpr = Node.Mul(divCoeff, transformedLog)
+                        return Pair(simplify(newExpr), true)
+                    }
+                }
+                val (newL, cL) = transformReciprocalLogs(node.l, target)
+                val (newR, cR) = transformReciprocalLogs(node.r, target)
+                return Pair(if (cL || cR) simplify(Node.Div(newL, newR)) else node, cL || cR)
+            }
+            is Node.Add -> {
+                val (newL, cL) = transformReciprocalLogs(node.l, target)
+                val (newR, cR) = transformReciprocalLogs(node.r, target)
+                return Pair(if (cL || cR) simplify(Node.Add(newL, newR)) else node, cL || cR)
+            }
+            is Node.Sub -> {
+                val (newL, cL) = transformReciprocalLogs(node.l, target)
+                val (newR, cR) = transformReciprocalLogs(node.r, target)
+                return Pair(if (cL || cR) simplify(Node.Sub(newL, newR)) else node, cL || cR)
+            }
+            is Node.Mul -> {
+                val (newL, cL) = transformReciprocalLogs(node.l, target)
+                val (newR, cR) = transformReciprocalLogs(node.r, target)
+                return Pair(if (cL || cR) simplify(Node.Mul(newL, newR)) else node, cL || cR)
+            }
+            is Node.Pow -> {
+                val (newB, cB) = transformReciprocalLogs(node.base, target)
+                val (newE, cE) = transformReciprocalLogs(node.exp, target)
+                return Pair(if (cB || cE) simplify(Node.Pow(newB, newE)) else node, cB || cE)
+            }
+            is Node.LogBase -> {
+                val (newB, cB) = transformReciprocalLogs(node.base, target)
+                val (newA, cA) = transformReciprocalLogs(node.arg, target)
+                return Pair(if (cB || cA) simplify(Node.LogBase(newB, newA)) else node, cB || cA)
+            }
+            is Node.Func -> {
+                val (newA, cA) = transformReciprocalLogs(node.arg, target)
+                return Pair(if (cA) simplify(Node.Func(node.fn, newA)) else node, cA)
+            }
+            else -> return Pair(node, false)
+        }
+    }
+
+    private fun extractCommonPowerBase(b1: Fraction, b2: Fraction): Triple<Fraction, Long, Long>? {
+        val f1 = b1.simplify()
+        val f2 = b2.simplify()
+        if (f1.num <= 0L || f2.num <= 0L) return null
+        if (f1 == Fraction(1) || f2 == Fraction(1)) return null
+        if (f1 == f2) return Triple(f1, 1L, 1L)
+
+        var bestP = 0L
+        var bestQ = 0L
+        var bestC: Fraction? = null
+        var minSum = Int.MAX_VALUE
+
+        for (p in -6..6) {
+            if (p == 0) continue
+            for (q in -6..6) {
+                if (q == 0) continue
+                val b1q = fractionPow(f1, q) ?: continue
+                val b2p = fractionPow(f2, p) ?: continue
+                if (b1q == b2p) {
+                    val (cFrac, valid) = findFractionRoot(f1, p)
+                    if (valid && cFrac.num > 0L && cFrac != Fraction(1)) {
+                        val sum = abs(p) + abs(q)
+                        if (sum < minSum) {
+                            minSum = sum
+                            bestP = p.toLong()
+                            bestQ = q.toLong()
+                            bestC = cFrac
+                        }
+                    }
+                }
+            }
+        }
+
+        return if (bestC != null) Triple(bestC, bestP, bestQ) else null
+    }
+
+    private fun fractionPow(f: Fraction, exp: Int): Fraction? {
+        if (exp == 0) return Fraction(1)
+        val absExp = abs(exp)
+        val base = if (exp > 0) f else f.invert()
+        var num = java.math.BigInteger.valueOf(base.num)
+        var den = java.math.BigInteger.valueOf(base.den)
+        try {
+            num = num.pow(absExp)
+            den = den.pow(absExp)
+            if (num > java.math.BigInteger.valueOf(Long.MAX_VALUE) || den > java.math.BigInteger.valueOf(Long.MAX_VALUE)) return null
+            return Fraction(num.toLong(), den.toLong()).simplify()
+        } catch (_: Exception) {
+            return null
+        }
+    }
+
+    private fun findFractionRoot(f: Fraction, p: Int): Pair<Fraction, Boolean> {
+        val target = if (p > 0) f else f.invert()
+        val n = abs(p).toLong()
+        val r = exactNthRoot(target, n)
+        return if (r != null) Pair(r, true) else Pair(Fraction(0), false)
+    }
+
+    private fun areAlgebraicallyEquivalent(n1: Node, n2: Node, target: String): Boolean {
+        if (n1.toExprString() == n2.toExprString()) return true
+        val diff = simplify(Node.Sub(n1, n2))
+        if (diff is Node.Num && diff.value.num == 0L) return true
+        val poly = toPolynomial(diff, target, maxDeg = 4)
+        if (poly != null) {
+            val allZero = poly.values.all { coeff ->
+                val s = simplify(coeff)
+                s is Node.Num && s.value.num == 0L
+            }
+            if (allZero) return true
+        }
+        return false
+    }
+
+    private fun solvePolynomialOrSubEquation(eqNode: Node, target: String): List<Double>? {
+        val poly = toPolynomial(eqNode, target, maxDeg = 4)
+        if (poly != null) {
+            val a4 = simplify(poly[4] ?: Node.Num(Fraction(0)))
+            val a3 = simplify(poly[3] ?: Node.Num(Fraction(0)))
+            val a  = simplify(poly[2] ?: Node.Num(Fraction(0)))
+            val b  = simplify(poly[1] ?: Node.Num(Fraction(0)))
+            val c  = simplify(poly[0] ?: Node.Num(Fraction(0)))
+
+            if (isZero(a4) && isZero(a3) && !isZero(a)) {
+                if (a is Node.Num && b is Node.Num && c is Node.Num) {
+                    val aD = a.value.toDouble()
+                    val bD = b.value.toDouble()
+                    val cD = c.value.toDouble()
+                    val D = bD * bD - 4.0 * aD * cD
+                    if (D >= 0) {
+                        val sqrtD = sqrt(max(0.0, D))
+                        val r1 = (-bD - sqrtD) / (2.0 * aD)
+                        val r2 = (-bD + sqrtD) / (2.0 * aD)
+                        return listOf(r1, r2).distinct()
+                    }
+                    return emptyList()
+                }
+            } else if (isZero(a4) && isZero(a3) && isZero(a) && !isZero(b)) {
+                val sol = simplify(Node.Div(negateNode(c), b))
+                val solVal = evalNodeAtX(sol, 0.0)
+                if (!solVal.isNaN()) return listOf(solVal)
+                return emptyList()
+            } else if (isZero(a4) && !isZero(a3)) {
+                if (a3 is Node.Num && a is Node.Num && b is Node.Num && c is Node.Num) {
+                    return solveCubicNumerical(a3.value.toDouble(), a.value.toDouble(), b.value.toDouble(), c.value.toDouble())
+                }
+            } else if (!isZero(a4) && isZero(a3) && isZero(b)) {
+                if (a4 is Node.Num && a is Node.Num && c is Node.Num) {
+                    val aD = a4.value.toDouble()
+                    val bD = a.value.toDouble()
+                    val cD = c.value.toDouble()
+                    val D_t = bD * bD - 4.0 * aD * cD
+                    if (D_t >= 0) {
+                        val sqrtDt = sqrt(max(0.0, D_t))
+                        val t1 = (-bD - sqrtDt) / (2.0 * aD)
+                        val t2 = (-bD + sqrtDt) / (2.0 * aD)
+                        val validTs = listOf(t1, t2).filter { it >= -1e-9 }.map { if (abs(it) < 1e-9) 0.0 else it }.distinct()
+                        val roots = mutableListOf<Double>()
+                        for (tVal in validTs) {
+                            if (tVal == 0.0) roots.add(0.0)
+                            else {
+                                val sqt = sqrt(tVal)
+                                roots.add(-sqt)
+                                roots.add(sqt)
+                            }
+                        }
+                        return roots.distinct()
+                    }
+                    return emptyList()
+                }
+            }
+        }
+        return null
+    }
+
+    private data class OdzConstraint(val type: OdzType, val node: Node)
+    private enum class OdzType { POSITIVE, NOT_ONE, NON_NEGATIVE, NON_ZERO }
+
+    private fun collectAllOdzConstraints(node: Node, list: MutableList<OdzConstraint>) {
+        when (node) {
+            is Node.LogBase -> {
+                list.add(OdzConstraint(OdzType.POSITIVE, node.base))
+                list.add(OdzConstraint(OdzType.NOT_ONE, node.base))
+                list.add(OdzConstraint(OdzType.POSITIVE, node.arg))
+                collectAllOdzConstraints(node.base, list)
+                collectAllOdzConstraints(node.arg, list)
+            }
+            is Node.Func -> {
+                if (node.fn == "ln" || node.fn == "log") {
+                    list.add(OdzConstraint(OdzType.POSITIVE, node.arg))
+                } else if (node.fn == "sqrt") {
+                    list.add(OdzConstraint(OdzType.NON_NEGATIVE, node.arg))
+                }
+                collectAllOdzConstraints(node.arg, list)
+            }
+            is Node.Sqrt -> {
+                list.add(OdzConstraint(OdzType.NON_NEGATIVE, node.inner))
+                collectAllOdzConstraints(node.inner, list)
+            }
+            is Node.Div -> {
+                list.add(OdzConstraint(OdzType.NON_ZERO, node.r))
+                collectAllOdzConstraints(node.l, list)
+                collectAllOdzConstraints(node.r, list)
+            }
+            is Node.Add -> { collectAllOdzConstraints(node.l, list); collectAllOdzConstraints(node.r, list) }
+            is Node.Sub -> { collectAllOdzConstraints(node.l, list); collectAllOdzConstraints(node.r, list) }
+            is Node.Mul -> { collectAllOdzConstraints(node.l, list); collectAllOdzConstraints(node.r, list) }
+            is Node.Pow -> { collectAllOdzConstraints(node.base, list); collectAllOdzConstraints(node.exp, list) }
+            else -> {}
+        }
+    }
+
+    private fun checkOdzAndResidual(
+        origLeft: Node,
+        origRight: Node,
+        target: String,
+        candRoots: List<Double>,
+        detailedSteps: MutableList<CasStep>
+    ): List<Double> {
+        val constraints = mutableListOf<OdzConstraint>()
+        collectAllOdzConstraints(origLeft, constraints)
+        collectAllOdzConstraints(origRight, constraints)
+
+        val validRoots = mutableListOf<Double>()
+        val excludedRoots = mutableListOf<Double>()
+
+        for (r in candRoots) {
+            var ok = true
+            for (c in constraints) {
+                val v = evalNodeAtVar(c.node, target, r)
+                if (v.isNaN() || v.isInfinite()) { ok = false; break }
+                when (c.type) {
+                    OdzType.POSITIVE -> if (v <= 1e-9) { ok = false; break }
+                    OdzType.NOT_ONE -> if (abs(v - 1.0) <= 1e-9) { ok = false; break }
+                    OdzType.NON_NEGATIVE -> if (v < -1e-9) { ok = false; break }
+                    OdzType.NON_ZERO -> if (abs(v) <= 1e-9) { ok = false; break }
+                }
+            }
+            if (ok) {
+                val lVal = evalNodeAtVar(origLeft, target, r)
+                val rVal = evalNodeAtVar(origRight, target, r)
+                if (lVal.isNaN() || rVal.isNaN() || lVal.isInfinite() || rVal.isInfinite() || abs(lVal - rVal) >= 1e-4) {
+                    ok = false
+                }
+            }
+            if (ok) {
+                validRoots.add(r)
+            } else {
+                excludedRoots.add(r)
+            }
+        }
+
+        if (excludedRoots.isNotEmpty()) {
+            val exStr = excludedRoots.joinToString(", ") { "$target = ${formatRoot(it)}" }
+            detailedSteps.add(
+                CasStep(
+                    badge = "ОДЗ",
+                    title = "Проверка корней по ОДЗ",
+                    formula = "$exStr — посторонний корень по ОДЗ",
+                    explanation = "Корни, не удовлетворяющие области допустимых значений исходного уравнения, исключаются."
+                )
+            )
+        }
+
+        return validRoots.distinct().sorted()
+    }
+
     private fun trySolveLogEquation(
         leftAst: Node,
         rightAst: Node,
         masterEq: Node,
         target: String,
-        detailedSteps: MutableList<CasStep>
+        detailedSteps: MutableList<CasStep>,
+        origLeft: Node,
+        origRight: Node
     ): SolveResult? {
-        var logFn: String? = null
-        var argA: Node? = null
-        var argB: Node? = null
+        data class LogTerm(val k: Fraction, val base: Node, val arg: Node)
 
-        if (leftAst is Node.Func && rightAst is Node.Func &&
-            leftAst.fn == rightAst.fn && (leftAst.fn == "ln" || leftAst.fn == "log")) {
-            logFn = leftAst.fn
-            argA = leftAst.arg
-            argB = rightAst.arg
-        } else {
+        fun extractLogTerm(node: Node): LogTerm? {
+            val s = simplify(node)
+            return when (s) {
+                is Node.LogBase -> LogTerm(Fraction(1), s.base, s.arg)
+                is Node.Func -> {
+                    if (s.fn == "ln") LogTerm(Fraction(1), Node.Variable("e"), s.arg)
+                    else if (s.fn == "log") LogTerm(Fraction(1), Node.Num(Fraction(10)), s.arg)
+                    else null
+                }
+                is Node.Mul -> {
+                    if (s.l is Node.Num && s.r is Node.LogBase) {
+                        LogTerm(s.l.value, s.r.base, s.r.arg)
+                    } else if (s.l is Node.Num && s.r is Node.Func && (s.r.fn == "ln" || s.r.fn == "log")) {
+                        val base = if (s.r.fn == "ln") Node.Variable("e") else Node.Num(Fraction(10))
+                        LogTerm(s.l.value, base, s.r.arg)
+                    } else if (s.r is Node.Num && s.l is Node.LogBase) {
+                        LogTerm(s.r.value, s.l.base, s.l.arg)
+                    } else null
+                }
+                else -> null
+            }
+        }
+
+        var logL = extractLogTerm(leftAst)
+        var logR = extractLogTerm(rightAst)
+
+        if (logL == null || logR == null) {
             val expr = simplify(masterEq)
             if (expr is Node.Sub) {
-                val l = expr.l
-                val r = expr.r
-                if (l is Node.Func && r is Node.Func && l.fn == r.fn && (l.fn == "ln" || l.fn == "log")) {
-                    logFn = l.fn
-                    argA = l.arg
-                    argB = r.arg
-                }
+                logL = extractLogTerm(expr.l)
+                logR = extractLogTerm(expr.r)
             }
         }
 
-        if (logFn == null || argA == null || argB == null) return null
+        if (logL == null || logR == null) return null
 
-        val fnName = if (logFn == "ln") "натурального" else "десятичного"
-        detailedSteps.add(
-            CasStep(
-                badge = "ОДЗ",
-                title = "Находим область допустимых значений",
-                formula = "${argA.toExprString()} > 0;  ${argB.toExprString()} > 0",
-                explanation = "Подлогарифмическое выражение $fnName логарифма должно быть строго больше нуля."
-            )
-        )
+        val (k1, b1Node, a1Node) = logL
+        val (k2, b2Node, a2Node) = logR
 
-        detailedSteps.add(
-            CasStep(
-                badge = "Шаг 1",
-                title = "Потенцируем уравнение",
-                formula = "${argA.toExprString()} = ${argB.toExprString()}",
-                explanation = "Так как основания логарифмов равны, приравниваем подлогарифмические выражения."
-            )
-        )
-
-        val eqAB = simplify(Node.Sub(argA, argB))
-        val poly = toPolynomial(eqAB, target, maxDeg = 4) ?: return null
-
-        val a4 = simplify(poly[4] ?: Node.Num(Fraction(0)))
-        val a3 = simplify(poly[3] ?: Node.Num(Fraction(0)))
-        val a  = simplify(poly[2] ?: Node.Num(Fraction(0)))
-        val b  = simplify(poly[1] ?: Node.Num(Fraction(0)))
-        val c  = simplify(poly[0] ?: Node.Num(Fraction(0)))
+        val b1Simp = simplify(b1Node)
+        val b2Simp = simplify(b2Node)
 
         val candRoots = mutableListOf<Double>()
-        if (isZero(a4) && isZero(a3) && !isZero(a)) {
-            if (a is Node.Num && b is Node.Num && c is Node.Num) {
-                val aD = a.value.toDouble()
-                val bD = b.value.toDouble()
-                val cD = c.value.toDouble()
-                val D = bD * bD - 4.0 * aD * cD
-                if (D >= 0) {
-                    val sqrtD = sqrt(max(0.0, D))
-                    candRoots.add((-bD - sqrtD) / (2.0 * aD))
-                    if (D > 1e-9) candRoots.add((-bD + sqrtD) / (2.0 * aD))
+
+        if (areAlgebraicallyEquivalent(b1Simp, b2Simp, target)) {
+            val bVal = evalNodeAtVar(b1Simp, target, 0.0)
+            if (!b1Simp.containsVar(target) && (bVal <= 0.0 || abs(bVal - 1.0) <= 1e-12)) {
+                return null
+            }
+            detailedSteps.add(
+                CasStep(
+                    badge = "Шаг",
+                    title = "Приводим к одинаковому основанию",
+                    formula = "${a1Node.toExprString()} = ${a2Node.toExprString()}",
+                    explanation = "Основания ${b1Simp.toExprString()} и ${b2Simp.toExprString()} тождественно равны, поэтому приравниваем аргументы: ${a1Node.toExprString()} = ${a2Node.toExprString()}."
+                )
+            )
+
+            val eqAB = simplify(Node.Sub(a1Node, a2Node))
+            val roots = solvePolynomialOrSubEquation(eqAB, target) ?: return null
+            candRoots.addAll(roots)
+        } else {
+            val b1Frac = (b1Simp as? Node.Num)?.value
+            val b2Frac = (b2Simp as? Node.Num)?.value
+
+            if (b1Frac == null || b2Frac == null) return null
+
+            val powTriple = extractCommonPowerBase(b1Frac, b2Frac) ?: return null
+            val (cFrac, p, q) = powTriple
+            val cNode = Node.Num(cFrac)
+
+            var finalA1 = a1Node
+            var finalA2 = a2Node
+            var pEff = p
+            var qEff = q
+
+            if (q > 1 && a2Node is Node.Pow && a2Node.exp is Node.Num && a2Node.exp.value.den == 1L) {
+                val m = a2Node.exp.value.num
+                if (m % q == 0L && (m / q) % 2L == 0L) {
+                    finalA2 = simplify(Node.Pow(a2Node.base, Node.Num(Fraction(m / q))))
+                    qEff = 1L
                 }
             }
-        } else if (isZero(a4) && isZero(a3) && isZero(a) && !isZero(b)) {
-            val sol = simplify(Node.Div(negateNode(c), b))
-            val solVal = evalNodeAtX(sol, 0.0)
-            if (!solVal.isNaN()) candRoots.add(solVal)
+            if (p > 1 && a1Node is Node.Pow && a1Node.exp is Node.Num && a1Node.exp.value.den == 1L) {
+                val m = a1Node.exp.value.num
+                if (m % p == 0L && (m / p) % 2L == 0L) {
+                    finalA1 = simplify(Node.Pow(a1Node.base, Node.Num(Fraction(m / p))))
+                    pEff = 1L
+                }
+            }
+
+            val fracL = k1 * Fraction(1, pEff)
+            val fracR = k2 * Fraction(1, qEff)
+
+            val M = fracL.num * fracR.den
+            val N = fracR.num * fracL.den
+
+            val termL = if (M == 1L) finalA1 else Node.Pow(finalA1, Node.Num(Fraction(M)))
+            val termR = if (N == 1L) finalA2 else Node.Pow(finalA2, Node.Num(Fraction(N)))
+
+            val cStr = cFrac.toString()
+            detailedSteps.add(
+                CasStep(
+                    badge = "Шаг",
+                    title = "Приводим логарифмы к общему основанию",
+                    formula = "log_$cStr(${termL.toExprString()}) = log_$cStr(${termR.toExprString()})",
+                    explanation = "Используем формулу перехода к новому основанию: log_{c^p}(A) = (1/p)·log_c(A)."
+                )
+            )
+
+            val eqAB = simplify(Node.Sub(termL, termR))
+            val roots = solvePolynomialOrSubEquation(eqAB, target) ?: return null
+            candRoots.addAll(roots)
         }
 
-        val validRoots = candRoots.distinct().sorted().filter { r ->
-            val vA = evalNodeAtX(argA, r)
-            val vB = evalNodeAtX(argB, r)
-            val isValid = !vA.isNaN() && vA > 1e-9 && !vB.isNaN() && vB > 1e-9
-            if (!isValid) {
-                detailedSteps.add(
-                    CasStep(
-                        badge = "ОДЗ",
-                        title = "Проверка корня по ОДЗ",
-                        formula = "$target = ${formatRoot(r)} — посторонний корень по ОДЗ",
-                        explanation = "При данном значении подлогарифмическое выражение не строго больше нуля."
-                    )
-                )
-            }
-            isValid
-        }
+        val validRoots = checkOdzAndResidual(origLeft, origRight, target, candRoots, detailedSteps)
 
         if (validRoots.isEmpty()) {
-            detailedSteps.add(CasStep("Ответ", "Записываем ответ", "Нет решений", "Все найденные корни являются посторонними по ОДЗ."))
-            return SolveResult("Нет решений", null, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
+            detailedSteps.add(
+                CasStep(
+                    badge = "Ответ",
+                    title = "Записываем ответ",
+                    formula = "Нет действительных корней (не удовлетворяют ОДЗ)",
+                    explanation = "Все найденные корни являются посторонними по ОДЗ."
+                )
+            )
+            return SolveResult("Нет действительных корней (не удовлетворяют ОДЗ)", null, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
         }
 
         val displayStr = formatRootsDisplay(validRoots, target)
         val answerFormula = formatRootsAnswer(validRoots, target)
         detailedSteps.add(CasStep("Ответ", "Записываем ответ", answerFormula, "Записываем корни логарифмического уравнения."))
         return SolveResult(displayStr, null, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
+    }
+
+    private fun solveSingleVariableNumericalFallback(
+        origLeft: Node,
+        origRight: Node,
+        target: String
+    ): SolveResult? {
+        val varsLeft = origLeft.collectVars()
+        val varsRight = origRight.collectVars()
+        val allVars = (varsLeft + varsRight).distinct()
+        if (allVars.any { it != target }) return null
+
+        val constraints = mutableListOf<OdzConstraint>()
+        collectAllOdzConstraints(origLeft, constraints)
+        collectAllOdzConstraints(origRight, constraints)
+
+        fun isInOdz(r: Double): Boolean {
+            for (c in constraints) {
+                val v = evalNodeAtVar(c.node, target, r)
+                if (v.isNaN() || v.isInfinite()) return false
+                when (c.type) {
+                    OdzType.POSITIVE -> if (v <= 1e-9) return false
+                    OdzType.NOT_ONE -> if (abs(v - 1.0) <= 1e-9) return false
+                    OdzType.NON_NEGATIVE -> if (v < -1e-9) return false
+                    OdzType.NON_ZERO -> if (abs(v) <= 1e-9) return false
+                }
+            }
+            val lVal = evalNodeAtVar(origLeft, target, r)
+            val rVal = evalNodeAtVar(origRight, target, r)
+            return !lVal.isNaN() && !rVal.isNaN() && !lVal.isInfinite() && !rVal.isInfinite()
+        }
+
+        fun evalDiff(r: Double): Double {
+            return evalNodeAtVar(origLeft, target, r) - evalNodeAtVar(origRight, target, r)
+        }
+
+        val samples = mutableListOf<Double>()
+        var x = -15.0
+        while (x <= 15.0) {
+            samples.add(x)
+            x += 0.02
+        }
+        x = -100.0
+        while (x < -15.0) {
+            samples.add(x)
+            x += 0.2
+        }
+        x = 15.02
+        while (x <= 100.0) {
+            samples.add(x)
+            x += 0.2
+        }
+        samples.sort()
+
+        val rawRoots = mutableListOf<Double>()
+
+        for (i in 0 until samples.size - 1) {
+            val x1 = samples[i]
+            val x2 = samples[i + 1]
+            if (!isInOdz(x1) || !isInOdz(x2)) continue
+            val y1 = evalDiff(x1)
+            val y2 = evalDiff(x2)
+            if (y1.isNaN() || y2.isNaN()) continue
+
+            if (y1 * y2 <= 0.0) {
+                var low = x1
+                var high = x2
+                var mid = (low + high) / 2.0
+                for (iter in 0..60) {
+                    mid = (low + high) / 2.0
+                    if (high - low < 1e-11) break
+                    val fMid = evalDiff(mid)
+                    if (fMid.isNaN()) break
+                    if (abs(fMid) < 1e-12) break
+                    val fLow = evalDiff(low)
+                    if (fLow * fMid <= 0.0) {
+                        high = mid
+                    } else {
+                        low = mid
+                    }
+                }
+                if (isInOdz(mid) && abs(evalDiff(mid)) < 1e-5) {
+                    rawRoots.add(mid)
+                }
+            } else if (abs(y1) < 1e-2 && i > 0 && i < samples.size - 1) {
+                val yPrev = evalDiff(samples[i - 1])
+                val yNext = evalDiff(samples[i + 1])
+                if (!yPrev.isNaN() && !yNext.isNaN() && abs(y1) <= abs(yPrev) && abs(y1) <= abs(yNext)) {
+                    var a = samples[i - 1]
+                    var b = samples[i + 1]
+                    val gr = (sqrt(5.0) - 1.0) / 2.0
+                    var c = b - gr * (b - a)
+                    var d = a + gr * (b - a)
+                    for (iter in 0..40) {
+                        if (b - a < 1e-10) break
+                        val fc = abs(evalDiff(c))
+                        val fd = abs(evalDiff(d))
+                        if (fc < fd) b = d else a = c
+                        c = b - gr * (b - a)
+                        d = a + gr * (b - a)
+                    }
+                    val minX = (a + b) / 2.0
+                    if (isInOdz(minX) && abs(evalDiff(minX)) < 1e-5) {
+                        rawRoots.add(minX)
+                    }
+                }
+            }
+        }
+
+        if (rawRoots.isEmpty()) return null
+
+        val hasExpOrLog = hasExpOrLogNodes(origLeft) || hasExpOrLogNodes(origRight)
+        val knownBases = collectKnownBases(origLeft) + collectKnownBases(origRight)
+
+        val snappedRoots = mutableListOf<Pair<Double, String>>()
+        for (r in rawRoots) {
+            val (snappedVal, label) = InequalitySolverEngine.formatExactLabel(r, hasExpOrLog, false, knownBases)
+            val finalVal = if (isInOdz(snappedVal) && abs(evalDiff(snappedVal)) < 1e-4) snappedVal else r
+            val finalLabel = if (finalVal == snappedVal) label else formatRoot(r)
+
+            if (snappedRoots.none { abs(it.first - finalVal) < 1e-6 }) {
+                snappedRoots.add(Pair(finalVal, finalLabel))
+            }
+        }
+
+        snappedRoots.sortBy { it.first }
+        if (snappedRoots.isEmpty()) return null
+
+        val detailedSteps = mutableListOf<CasStep>()
+        detailedSteps.add(
+            CasStep(
+                badge = "Условие",
+                title = "Исходное уравнение",
+                formula = "$target: ${formatReadableExpr(origLeft.toExprString())} = ${formatReadableExpr(origRight.toExprString())}",
+                explanation = "Анализируем одновариантное уравнение."
+            )
+        )
+        detailedSteps.add(
+            CasStep(
+                badge = "ОДЗ",
+                title = "Область допустимых значений",
+                formula = "ОДЗ вычислена для логарифмических и дробных ограничений",
+                explanation = "Проверяем допустимость области определения для найденных значений."
+            )
+        )
+
+        val displayStr = if (snappedRoots.size == 1) {
+            "$target = ${snappedRoots[0].second}"
+        } else {
+            val subs = listOf("₁", "₂", "₃", "₄", "₅")
+            snappedRoots.mapIndexed { idx, pair ->
+                "$target${subs.getOrElse(idx) { "${idx + 1}" }} = ${pair.second}"
+            }.joinToString(";  ")
+        }
+
+        val answerFormula = if (snappedRoots.size == 1) {
+            "$target = ${snappedRoots[0].second}"
+        } else {
+            val subs = listOf("₁", "₂", "₃", "₄", "₅")
+            snappedRoots.mapIndexed { idx, pair ->
+                "$target${subs.getOrElse(idx) { "${idx + 1}" }} = ${pair.second}"
+            }.joinToString("\n")
+        }
+
+        detailedSteps.add(
+            CasStep(
+                badge = "Шаг 1",
+                title = "Найденные корни",
+                formula = displayStr,
+                explanation = "Находим решения уравнения с учетом ОДЗ."
+            )
+        )
+        detailedSteps.add(
+            CasStep(
+                badge = "Ответ",
+                title = "Записываем ответ",
+                formula = answerFormula,
+                explanation = "Записываем найденные корни уравнения."
+            )
+        )
+
+        return SolveResult(displayStr, null, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
+    }
+
+    private fun hasExpOrLogNodes(node: Node): Boolean {
+        return when (node) {
+            is Node.LogBase -> true
+            is Node.Func -> node.fn == "ln" || node.fn == "log"
+            is Node.Pow -> node.exp.containsVar("x")
+            is Node.Add -> hasExpOrLogNodes(node.l) || hasExpOrLogNodes(node.r)
+            is Node.Sub -> hasExpOrLogNodes(node.l) || hasExpOrLogNodes(node.r)
+            is Node.Mul -> hasExpOrLogNodes(node.l) || hasExpOrLogNodes(node.r)
+            is Node.Div -> hasExpOrLogNodes(node.l) || hasExpOrLogNodes(node.r)
+            else -> false
+        }
+    }
+
+    private fun collectKnownBases(node: Node): Set<Long> {
+        val set = mutableSetOf<Long>()
+        fun walk(n: Node) {
+            when (n) {
+                is Node.LogBase -> {
+                    if (n.base is Node.Num && n.base.value.den == 1L && n.base.value.num > 0) {
+                        set.add(n.base.value.num)
+                    }
+                    walk(n.base)
+                    walk(n.arg)
+                }
+                is Node.Func -> {
+                    if (n.fn == "log") set.add(10L)
+                    walk(n.arg)
+                }
+                is Node.Add -> { walk(n.l); walk(n.r) }
+                is Node.Sub -> { walk(n.l); walk(n.r) }
+                is Node.Mul -> { walk(n.l); walk(n.r) }
+                is Node.Div -> { walk(n.l); walk(n.r) }
+                is Node.Pow -> {
+                    if (n.base is Node.Num && n.base.value.den == 1L && n.base.value.num > 0) {
+                        set.add(n.base.value.num)
+                    }
+                    walk(n.base); walk(n.exp)
+                }
+                else -> {}
+            }
+        }
+        walk(node)
+        return set
     }
 
     private fun trySolveRadicalEquation(
@@ -2134,7 +3081,7 @@ class CasEngine {
             }
             if (valP == s.den) return Node.Num(Fraction(-p))
         }
-        return Node.Div(Node.Func("ln", Node.Num(s)), Node.Func("ln", Node.Num(Fraction(base))))
+        return Node.LogBase(Node.Num(Fraction(base)), Node.Num(s))
     }
 
     private fun parseExpTerm(node: Node, target: String): ExpTermInfo? {
@@ -2393,9 +3340,119 @@ class CasEngine {
         return null
     }
 
+    private fun trySolveSameBasePowEquation(
+        leftAst: Node,
+        rightAst: Node,
+        target: String,
+        detailedSteps: MutableList<CasStep>
+    ): SolveResult? {
+        val powL = leftAst as? Node.Pow ?: if (leftAst is Node.Num && leftAst.value.den == 1L && leftAst.value.num > 1L) Node.Pow(leftAst, Node.Num(Fraction(1))) else null
+        val powR = rightAst as? Node.Pow ?: if (rightAst is Node.Num && rightAst.value.den == 1L && rightAst.value.num > 1L) Node.Pow(rightAst, Node.Num(Fraction(1))) else null
+
+        if (powL == null || powR == null) return null
+        if (leftAst !is Node.Pow && rightAst !is Node.Pow) return null
+
+        val bL = simplify(powL.base)
+        val bR = simplify(powR.base)
+
+        val isEL = bL is Node.Variable && bL.name.equals("e", ignoreCase = true)
+        val isER = bR is Node.Variable && bR.name.equals("e", ignoreCase = true)
+        val isBothE = isEL && isER
+
+        val isNumL = bL is Node.Num && bL.value.num > 0L && !(bL.value.num == 1L && bL.value.den == 1L)
+        val isNumR = bR is Node.Num && bR.value.num > 0L && !(bR.value.num == 1L && bR.value.den == 1L)
+        val isSameNum = isNumL && isNumR && bL.value == (bR as Node.Num).value
+
+        if (isBothE || isSameNum) {
+            val expLStr = powL.exp.toExprString()
+            val expRStr = powR.exp.toExprString()
+            val eqFormula = "$expLStr = $expRStr"
+            val bStr = bL.toExprString()
+            val step1 = CasStep(
+                badge = "Шаг 1",
+                title = "Приравниваем показатели степеней",
+                formula = eqFormula,
+                explanation = "Так как основания степеней равны и положительны ($bStr ≠ 1), приравниваем показатели."
+            )
+            val mergedSteps = mutableListOf<CasStep>()
+            mergedSteps.addAll(detailedSteps)
+            mergedSteps.add(step1)
+
+            val subRes = isolateVariableFull(eqFormula, target)
+
+            for (step in subRes.detailedSteps) {
+                if (step.badge.startsWith("Шаг")) {
+                    val currentStepCount = mergedSteps.count { it.badge.startsWith("Шаг") } + 1
+                    mergedSteps.add(step.copy(badge = "Шаг $currentStepCount"))
+                } else {
+                    mergedSteps.add(step)
+                }
+            }
+            return SolveResult(
+                subRes.displayFormula,
+                subRes.primaryNode,
+                mergedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" },
+                subRes.exactFraction,
+                detailedSteps = mergedSteps
+            )
+        }
+
+        if (bL is Node.Num && bR is Node.Num && bL.value.den == 1L && bL.value.num > 1L && bR.value.den == 1L && bR.value.num > 1L) {
+            val (minL, mL) = normalizeBasePower(bL.value.num)
+            val (minR, mR) = normalizeBasePower(bR.value.num)
+
+            if (minL == minR && minL > 1L) {
+                val expLStr = powL.exp.toExprString()
+                val expRStr = powR.exp.toExprString()
+
+                val fL = if (mL == 1L) expLStr else "($mL)*($expLStr)"
+                val fR = if (mR == 1L) expRStr else "($mR)*($expRStr)"
+                val stepFormula = "$fL = $fR"
+
+                val scaledL = if (mL == 1L) powL.exp else Node.Mul(Node.Num(Fraction(mL)), powL.exp)
+                val scaledR = if (mR == 1L) powR.exp else Node.Mul(Node.Num(Fraction(mR)), powR.exp)
+
+                val solveEqStr = "${simplify(scaledL).toExprString()} = ${simplify(scaledR).toExprString()}"
+
+                val step1 = CasStep(
+                    badge = "Шаг 1",
+                    title = "Приводим к общему основанию",
+                    formula = stepFormula,
+                    explanation = "Приводим обе части уравнения к общему основанию $minL и приравниваем показатели."
+                )
+                val mergedSteps = mutableListOf<CasStep>()
+                mergedSteps.addAll(detailedSteps)
+                mergedSteps.add(step1)
+
+                val subRes = isolateVariableFull(solveEqStr, target)
+
+                for (step in subRes.detailedSteps) {
+                    if (step.badge.startsWith("Шаг")) {
+                        val currentStepCount = mergedSteps.count { it.badge.startsWith("Шаг") } + 1
+                        mergedSteps.add(step.copy(badge = "Шаг $currentStepCount"))
+                    } else {
+                        mergedSteps.add(step)
+                    }
+                }
+                return SolveResult(
+                    subRes.displayFormula,
+                    subRes.primaryNode,
+                    mergedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" },
+                    subRes.exactFraction,
+                    detailedSteps = mergedSteps
+                )
+            }
+        }
+
+        return null
+    }
+
     fun isolateVariableFull(equation: String, targetVar: String = "x"): SolveResult {
+        var origLeft: Node? = null
+        var origRight: Node? = null
+        var target = targetVar.trim().ifEmpty { "x" }
         return try {
-            val target = targetVar.trim().ifEmpty { "x" }
+            target = targetVar.trim().ifEmpty { "x" }
 
             val normalizedEq = equation.trim()
                 .replace("÷", "/")
@@ -2435,11 +3492,31 @@ class CasEngine {
 
             val detailedSteps = mutableListOf<CasStep>()
 
-            val odzSteps = extractOdzSteps(leftAst, rightAst, target)
+            val origLeft = leftAst
+            val origRight = rightAst
+
+            val (currentLeft, leftChanged) = transformReciprocalLogs(leftAst, target)
+            val (currentRight, rightChanged) = transformReciprocalLogs(rightAst, target)
+
+            if (leftChanged || rightChanged) {
+                detailedSteps.add(
+                    CasStep(
+                        badge = "Шаг",
+                        title = "Свойство обратного логарифма",
+                        formula = "${formatReadableExpr(currentLeft.toExprString())} = ${formatReadableExpr(currentRight.toExprString())}",
+                        explanation = "Используем формулу 1 / logₐ(b) = log_b(a) (с учётом ОДЗ: a > 0, a ≠ 1, b > 0, b ≠ 1)."
+                    )
+                )
+            }
+
+            val odzSteps = extractOdzSteps(currentLeft, currentRight, target)
             detailedSteps.addAll(odzSteps)
 
-            val (nl, dl) = toRational(leftAst)
-            val (nr, dr) = toRational(rightAst)
+            val sameBaseRes = trySolveSameBasePowEquation(currentLeft, currentRight, target, detailedSteps)
+            if (sameBaseRes != null) return sameBaseRes
+
+            val (nl, dl) = toRational(currentLeft)
+            val (nr, dr) = toRational(currentRight)
             val masterEq = simplify(Node.Sub(Node.Mul(nl, dr), Node.Mul(nr, dl)))
 
             val masterStr = formatReadableExpr(masterEq.toExprString())
@@ -2454,19 +3531,21 @@ class CasEngine {
             )
 
             fun isExtraneousRoot(rootVal: Double): Boolean {
-                if (rootVal.isNaN() || rootVal.isInfinite()) return true
-                if (dl !is Node.Num) {
-                    val denL = evalNodeAtX(dl, rootVal)
+                if (!dl.containsVar(target) && !dr.containsVar(target)) return false
+                if (rootVal.isInfinite()) return true
+                if (rootVal.isNaN()) return false
+                if (dl.containsVar(target)) {
+                    val denL = evalNodeAtVar(dl, target, rootVal)
                     if (!denL.isNaN() && abs(denL) < 1e-7) return true
                 }
-                if (dr !is Node.Num) {
-                    val denR = evalNodeAtX(dr, rootVal)
+                if (dr.containsVar(target)) {
+                    val denR = evalNodeAtVar(dr, target, rootVal)
                     if (!denR.isNaN() && abs(denR) < 1e-7) return true
                 }
                 return false
             }
 
-            val logRes = trySolveLogEquation(leftAst, rightAst, masterEq, target, detailedSteps)
+            val logRes = trySolveLogEquation(currentLeft, currentRight, masterEq, target, detailedSteps, origLeft, origRight)
             if (logRes != null) return logRes
 
             val radRes = trySolveRadicalEquation(leftAst, rightAst, target, detailedSteps)
@@ -2742,6 +3821,61 @@ class CasEngine {
 
                 // --- КВАДРАТНОЕ УРАВНЕНИЕ (общий случай) ---
                 if (!isZero(a) && !isZero(b)) {
+                    if (isZero(c)) {
+                        val x1 = Node.Num(Fraction(0))
+                        val x2 = simplify(Node.Div(negateNode(b), a))
+                        if (!x2.containsVar(target)) {
+                            val x1Val = evalNodeAtX(x1, 0.0)
+                            val x2Val = evalNodeAtX(x2, 0.0)
+                            val ext1 = isExtraneousRoot(x1Val)
+                            val ext2 = if (x2 is Node.Num) isExtraneousRoot(x2Val) else false
+
+                            if (ext1 && ext2) {
+                                detailedSteps.add(CasStep("Ответ", "Записываем ответ", "Нет решений", "Все найденные корни являются посторонними по ОДЗ."))
+                                return SolveResult("Нет решений", null, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
+                            } else if (ext1) {
+                                val x2Str = x2.toExprString()
+                                detailedSteps.add(CasStep("Ответ", "Записываем ответ", "$target = $x2Str", "Записываем единственный допустимый корень."))
+                                return SolveResult("$target = $x2Str", x2, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, (x2 as? Node.Num)?.value, detailedSteps = detailedSteps)
+                            } else if (ext2) {
+                                detailedSteps.add(CasStep("Ответ", "Записываем ответ", "$target = 0", "Записываем единственный допустимый корень."))
+                                return SolveResult("$target = 0", x1, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, Fraction(0), detailedSteps = detailedSteps)
+                            }
+
+                            val x2Str = x2.toExprString()
+                            val factorInside = simplify(Node.Add(Node.Mul(a, Node.Variable(target)), b))
+                            val factorStr = factorInside.toExprString()
+
+                            detailedSteps.add(
+                                CasStep(
+                                    badge = "Шаг 2",
+                                    title = "Выносим общий множитель за скобки",
+                                    formula = "$target · (${formatReadableExpr(factorStr)}) = 0",
+                                    explanation = "Выносим общий множитель за скобки."
+                                )
+                            )
+                            detailedSteps.add(
+                                CasStep(
+                                    badge = "Шаг 3",
+                                    title = "Приравниваем каждый множитель к нулю",
+                                    formula = "${target}₁ = 0\n${target}₂ = $x2Str",
+                                    explanation = "Приравниваем каждый множитель к нулю."
+                                )
+                            )
+                            detailedSteps.add(
+                                CasStep(
+                                    badge = "Ответ",
+                                    title = "Записываем ответ",
+                                    formula = "${target}₁ = 0\n${target}₂ = $x2Str",
+                                    explanation = "Записываем корни уравнения."
+                                )
+                            )
+
+                            val displayStr = "${target}₁ = 0;  ${target}₂ = $x2Str"
+                            return SolveResult(displayStr, x2, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, (x2 as? Node.Num)?.value, detailedSteps = detailedSteps)
+                        }
+                    }
+
                     val disc = simplify(Node.Sub(Node.Pow(b, Node.Num(Fraction(2))), Node.Mul(Node.Num(Fraction(4)), Node.Mul(a, c))))
                     if (a is Node.Num && b is Node.Num && disc is Node.Num) {
                         val aVal = a.value
@@ -2918,7 +4052,7 @@ class CasEngine {
                                 detailedSteps.add(CasStep("Шаг $stepNum", "Логарифмируем показательное уравнение", "${left.toExprString()} = ${right.toExprString()}", "Берем натуральный логарифм от обеих частей уравнения."))
                             } else {
                                 left = cur.exp
-                                right = simplify(Node.Div(Node.Func("ln", right), Node.Func("ln", cur.base)))
+                                right = simplify(Node.LogBase(cur.base, right))
                                 detailedSteps.add(CasStep("Шаг $stepNum", "Логарифмируем показательное уравнение", "${left.toExprString()} = ${right.toExprString()}", "Логарифмируем обе части уравнения."))
                             }
                         } else if (cur.base.containsVar(target)) {
@@ -3053,6 +4187,43 @@ class CasEngine {
                             else -> break
                         }
                     }
+                    is Node.LogBase -> {
+                        if (cur.arg.containsVar(target) && !cur.base.containsVar(target)) {
+                            val bVal = evalNodeAtX(cur.base, 0.0)
+                            if (!cur.base.containsVar(target) && (bVal <= 0.0 || abs(bVal - 1.0) <= 1e-12)) {
+                                throw ArithmeticException("Основание логарифма должно быть > 0 и ≠ 1")
+                            }
+                            left = cur.arg
+                            right = simplify(Node.Pow(cur.base, right))
+                            odzCheckNodes.add(cur.arg)
+                            val bStr = cur.base.toExprString()
+                            detailedSteps.add(
+                                CasStep(
+                                    badge = "Шаг $stepNum",
+                                    title = "Потенцируем логарифмическое уравнение",
+                                    formula = "${left.toExprString()} = ${right.toExprString()}",
+                                    explanation = "По определению логарифма: log_${bStr}(a) = c  ⇔  a = (${bStr})^c."
+                                )
+                            )
+                        } else if (cur.base.containsVar(target) && !cur.arg.containsVar(target)) {
+                            val aVal = evalNodeAtX(cur.arg, 0.0)
+                            if (!cur.arg.containsVar(target) && aVal <= 0.0) {
+                                throw ArithmeticException("Аргумент логарифма должен быть строго больше 0")
+                            }
+                            left = cur.base
+                            right = simplify(Node.Pow(cur.arg, Node.Div(Node.Num(Fraction(1)), right)))
+                            odzCheckNodes.add(cur.base)
+                            val aStr = cur.arg.toExprString()
+                            detailedSteps.add(
+                                CasStep(
+                                    badge = "Шаг $stepNum",
+                                    title = "Извлекаем основание логарифма",
+                                    formula = "${left.toExprString()} = ${right.toExprString()}",
+                                    explanation = "По определению логарифма: log_x($aStr) = c  ⇔  x^c = $aStr  ⇔  x = ($aStr)^(1/c)."
+                                )
+                            )
+                        } else break
+                    }
                     else -> break
                 }
                 right = simplify(right)
@@ -3108,6 +4279,9 @@ class CasEngine {
 
             // Обязательная проверка: выразилась ли переменная
             if (left !is Node.Variable || (left as Node.Variable).name != target || cleanRight.containsVar(target)) {
+                val fallbackRes = solveSingleVariableNumericalFallback(origLeft, origRight, target)
+                if (fallbackRes != null) return fallbackRes
+
                 return SolveResult("Не удалось выразить '$target'", null)
             }
 
@@ -3152,6 +4326,13 @@ class CasEngine {
             detailedSteps.add(CasStep("Ответ", "Записываем ответ", "$target = $rightStr", "Записываем итоговый результат."))
             return SolveResult("$target = $rightStr", cleanRight, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, (cleanRight as? Node.Num)?.value, detailedSteps = detailedSteps)
         } catch (e: Exception) {
+            val oL = origLeft
+            val oR = origRight
+            if (oL != null && oR != null) {
+                val fallbackRes = solveSingleVariableNumericalFallback(oL, oR, target)
+                if (fallbackRes != null) return fallbackRes
+            }
+
             SolveResult("Ошибка: ${e.message ?: "Не удалось решить уравнение"}", null)
         }
     }
@@ -3373,10 +4554,11 @@ class CasEngine {
             is Node.Sqrt -> hasPhysicalConstant(node.inner)
             is Node.Func -> hasPhysicalConstant(node.arg)
             is Node.Comb -> hasPhysicalConstant(node.n) || hasPhysicalConstant(node.k)
+            is Node.LogBase -> hasPhysicalConstant(node.base) || hasPhysicalConstant(node.arg)
         }
     }
 
-    fun evalNodeAtX(node: Node, xVal: Double): Double {
+    fun evalNodeAtVar(node: Node, varName: String, value: Double): Double {
         return when (node) {
             is Node.Num -> node.value.toDouble()
             is Node.Approx -> node.value
@@ -3385,37 +4567,42 @@ class CasEngine {
                 if (constVal != null) {
                     constVal
                 } else when (node.name.lowercase()) {
-                    "x" -> xVal
+                    varName.lowercase() -> value
                     else -> Double.NaN
                 }
             }
-            is Node.Add -> evalNodeAtX(node.l, xVal) + evalNodeAtX(node.r, xVal)
-            is Node.Sub -> evalNodeAtX(node.l, xVal) - evalNodeAtX(node.r, xVal)
-            is Node.Mul -> evalNodeAtX(node.l, xVal) * evalNodeAtX(node.r, xVal)
+            is Node.Add -> evalNodeAtVar(node.l, varName, value) + evalNodeAtVar(node.r, varName, value)
+            is Node.Sub -> evalNodeAtVar(node.l, varName, value) - evalNodeAtVar(node.r, varName, value)
+            is Node.Mul -> evalNodeAtVar(node.l, varName, value) * evalNodeAtVar(node.r, varName, value)
             is Node.Div -> {
-                val r = evalNodeAtX(node.r, xVal)
+                val r = evalNodeAtVar(node.r, varName, value)
                 if (r == 0.0 || r.isNaN()) Double.NaN
-                else evalNodeAtX(node.l, xVal) / r
+                else evalNodeAtVar(node.l, varName, value) / r
             }
             is Node.Pow -> {
-                val b = evalNodeAtX(node.base, xVal)
-                val e = evalNodeAtX(node.exp, xVal)
+                val b = evalNodeAtVar(node.base, varName, value)
+                val e = evalNodeAtVar(node.exp, varName, value)
                 b.pow(e)
             }
             is Node.Sqrt -> {
-                val v = evalNodeAtX(node.inner, xVal)
+                val v = evalNodeAtVar(node.inner, varName, value)
                 if (v < 0.0 || v.isNaN()) Double.NaN else sqrt(v)
             }
             is Node.Func -> {
-                val a = evalNodeAtX(node.arg, xVal)
+                val a = evalNodeAtVar(node.arg, varName, value)
                 if (a.isNaN()) return Double.NaN
                 when (node.fn.lowercase()) {
                     "sin" -> sin(if (isDegreeMode) Math.toRadians(a) else a)
                     "cos" -> cos(if (isDegreeMode) Math.toRadians(a) else a)
-                    "tan" -> {
+                    "tan", "tg" -> {
                         val rad = if (isDegreeMode) Math.toRadians(a) else a
                         val c = cos(rad)
                         if (abs(c) < 1e-15) Double.NaN else tan(rad)
+                    }
+                    "cot", "ctg" -> {
+                        val rad = if (isDegreeMode) Math.toRadians(a) else a
+                        val s = sin(rad)
+                        if (abs(s) < 1e-15) Double.NaN else cos(rad) / s
                     }
                     "asin" -> {
                         if (a < -1.0 || a > 1.0) Double.NaN
@@ -3452,8 +4639,8 @@ class CasEngine {
                 }
             }
             is Node.Comb -> {
-                val nD = evalNodeAtX(node.n, xVal)
-                val kD = evalNodeAtX(node.k, xVal)
+                val nD = evalNodeAtVar(node.n, varName, value)
+                val kD = evalNodeAtVar(node.k, varName, value)
                 if (nD.isNaN() || kD.isNaN() || nD < 0.0 || kD < 0.0 || nD % 1.0 != 0.0 || kD % 1.0 != 0.0) {
                     throw ArithmeticException("Индексы должны быть целыми неотрицательными числами")
                 }
@@ -3467,8 +4654,16 @@ class CasEngine {
                     else -> Double.NaN
                 }
             }
+            is Node.LogBase -> {
+                val b = evalNodeAtVar(node.base, varName, value)
+                val a = evalNodeAtVar(node.arg, varName, value)
+                if (b <= 0.0 || abs(b - 1.0) <= 1e-12 || a <= 0.0 || b.isNaN() || a.isNaN()) Double.NaN
+                else ln(a) / ln(b)
+            }
         }
     }
+
+    fun evalNodeAtX(node: Node, xVal: Double): Double = evalNodeAtVar(node, "x", xVal)
 
     // --- МАТРИЧНЫЕ ВЫЧИСЛЕНИЯ НА ДРОБЯХ (2x2 и 3x3) ---
 

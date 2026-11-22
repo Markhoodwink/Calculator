@@ -1,5 +1,6 @@
 package com.example.calculator
 
+import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -27,6 +28,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -56,6 +58,20 @@ class MainActivity : AppCompatActivity() {
     private lateinit var trigSolverManager: TrigSolverManager
     private lateinit var section3DManager: Section3DManager
     private lateinit var unitConverterManager: UnitConverterManager
+    private lateinit var inequalitySolverManager: InequalitySolverManager
+    private lateinit var formulaScannerManager: FormulaScannerManager
+
+    private val cameraPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (::formulaScannerManager.isInitialized) {
+            formulaScannerManager.onCameraPermissionResult(granted)
+        }
+    }
+
+    private val galleryPickerLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null && ::formulaScannerManager.isInitialized) {
+            formulaScannerManager.onGalleryImagePicked(uri)
+        }
+    }
 
     // ── SHIFT state ──────────────────────────────────────────────────────────
     private var isShiftActive: Boolean = false
@@ -73,15 +89,26 @@ class MainActivity : AppCompatActivity() {
     private var engPrefix: String = ""
     private var engStep: Int = 0
 
+    private var pendingPreviewRunnable: Runnable? = null
     private val previewExecutor = Executors.newSingleThreadExecutor()
     private val previewRequestId = AtomicLong(0)
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    private fun cancelPendingPreview() {
+        pendingPreviewRunnable?.let { mainHandler.removeCallbacks(it) }
+        pendingPreviewRunnable = null
+        previewRequestId.incrementAndGet()
+    }
 
     private var lastVarChipList: List<String> = emptyList()
 
     override fun onDestroy() {
         super.onDestroy()
         previewExecutor.shutdown()
+        inequalitySolverManager.cleanup()
+        if (::formulaScannerManager.isInitialized) {
+            formulaScannerManager.cleanup()
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -127,6 +154,16 @@ class MainActivity : AppCompatActivity() {
         initKeypad()
         initNavigationPad()
 
+        casioDisplay.onPreviewClick = {
+            KeyFeedback.trigger(casioDisplay, isHeavy = true)
+            val raw = casioDisplay.getRawExpression().trim()
+            if (raw.contains("=")) {
+                solveCurrentEquation()
+            } else {
+                executeCalculation()
+            }
+        }
+
         // Слушатель формулы для динамического появления кнопок "Найти: [x] [y]" и "живого" превью
         casioDisplay.onContentChanged = { rawExpr ->
             btnCasSteps.visibility = View.GONE
@@ -135,45 +172,95 @@ class MainActivity : AppCompatActivity() {
             engPrefix = ""
             engStep = 0
 
+            cancelPendingPreview()
             val requestId = previewRequestId.incrementAndGet()
 
-            val opsAndFuncs = listOf(
-                "+", "-", "*", "/", "·", "⋅", "∙", "×", "÷", "^", "√", "cbrt", "sin", "cos", "tan",
-                "asin", "acos", "atan", "log", "ln", "fact", "%", "π", "e", "Ans", "comb", "perm"
-            )
-            val hasOpOrFunc = opsAndFuncs.any { rawExpr.contains(it) }
+            if (!rawExpr.contains("=")) {
+                if (rawExpr.isBlank() || extractVariables(rawExpr).isNotEmpty()) {
+                    casioDisplay.setLivePreview(null)
+                } else {
+                    val degreeMode = casEngine.isDegreeMode
+                    val lastAns = casEngine.lastAnswer
 
-            if (rawExpr.isBlank() || rawExpr.contains("=") || extractVariables(rawExpr).isNotEmpty() || !hasOpOrFunc) {
-                casioDisplay.setLivePreview(null)
-            } else {
-                val degreeMode = casEngine.isDegreeMode
-                val lastAns = casEngine.lastAnswer
+                    previewExecutor.execute {
+                        if (requestId != previewRequestId.get()) return@execute
+                        var previewText: String? = null
+                        try {
+                            val previewEngine = CasEngine().apply {
+                                isDegreeMode = degreeMode
+                                lastAnswer = lastAns
+                            }
+                            val eval = previewEngine.evaluateFull(rawExpr, includeSteps = false)
+                            val formula = eval.displayFormula.trim()
+                            if (formula.isNotBlank() &&
+                                formula.length <= 48 &&
+                                !formula.contains("NaN") &&
+                                !formula.contains("Infinity") &&
+                                !formula.startsWith("Ошибка") &&
+                                !formula.startsWith("Error") &&
+                                !formula.startsWith("Не удалось") &&
+                                !formula.startsWith("Переменная")
+                            ) {
+                                previewText = eval.displayFormula
+                            }
+                        } catch (_: Exception) {}
 
-                previewExecutor.execute {
-                    var previewText: String? = null
-                    try {
-                        val previewEngine = CasEngine().apply {
-                            isDegreeMode = degreeMode
-                            lastAnswer = lastAns
-                        }
-                        val eval = previewEngine.evaluateFull(rawExpr, includeSteps = false)
-                        val formula = eval.displayFormula.trim()
-                        if (formula.isNotBlank() &&
-                            !formula.startsWith("Ошибка") &&
-                            !formula.startsWith("Error") &&
-                            formula != rawExpr.trim()
-                        ) {
-                            previewText = eval.displayFormula
-                        }
-                    } catch (_: Exception) {}
-
-                    if (requestId == previewRequestId.get()) {
-                        mainHandler.post {
-                            if (requestId == previewRequestId.get()) {
-                                casioDisplay.setLivePreview(previewText)
+                        if (requestId == previewRequestId.get()) {
+                            mainHandler.post {
+                                if (requestId == previewRequestId.get() && !casioDisplay.hasResult) {
+                                    casioDisplay.setLivePreview(previewText)
+                                }
                             }
                         }
                     }
+                }
+            } else {
+                val eqParts = rawExpr.split("=")
+                val vars = extractVariables(rawExpr)
+                if (eqParts.size != 2 || eqParts[0].trim().isBlank() || eqParts[1].trim().isBlank() || vars.isEmpty()) {
+                    casioDisplay.setLivePreview(null)
+                } else {
+                    val targetVar = if ("x" in vars) "x" else vars.first()
+                    val degreeMode = casEngine.isDegreeMode
+                    val lastAns = casEngine.lastAnswer
+
+                    val runnable = Runnable {
+                        pendingPreviewRunnable = null
+                        previewExecutor.execute {
+                            if (requestId != previewRequestId.get()) return@execute
+                            var previewText: String? = null
+                            try {
+                                val previewEngine = CasEngine().apply {
+                                    isDegreeMode = degreeMode
+                                    lastAnswer = lastAns
+                                }
+                                val eval = previewEngine.isolateVariableFull(rawExpr, targetVar)
+                                val formula = eval.displayFormula.trim()
+                                if (formula.isNotBlank() &&
+                                    formula.length <= 48 &&
+                                    !formula.contains("NaN") &&
+                                    !formula.contains("Infinity") &&
+                                    !formula.startsWith("Ошибка") &&
+                                    !formula.startsWith("Error") &&
+                                    !formula.startsWith("Не удалось") &&
+                                    !formula.startsWith("Переменная") &&
+                                    !formula.startsWith("Нет ")
+                                ) {
+                                    previewText = eval.displayFormula
+                                }
+                            } catch (_: Exception) {}
+
+                            if (requestId == previewRequestId.get()) {
+                                mainHandler.post {
+                                    if (requestId == previewRequestId.get() && !casioDisplay.hasResult) {
+                                        casioDisplay.setLivePreview(previewText)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    pendingPreviewRunnable = runnable
+                    mainHandler.postDelayed(runnable, 120L)
                 }
             }
         }
@@ -230,8 +317,84 @@ class MainActivity : AppCompatActivity() {
             findViewById<View>(R.id.layoutCalculator).visibility = View.VISIBLE
         }
 
+        inequalitySolverManager = InequalitySolverManager(rootLayout, casEngine) { v ->
+            triggerKeyHaptic(v)
+        }
+
+        formulaScannerManager = FormulaScannerManager(
+            activity = this,
+            rootLayout = rootLayout,
+            onHaptic = { v -> triggerKeyHaptic(v) },
+            onRequestCameraPermission = {
+                cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+            },
+            onRequestGalleryImage = {
+                galleryPickerLauncher.launch("image/*")
+            },
+            onCloseScanner = {
+                val layoutModeHub = findViewById<View>(R.id.layoutModeHub)
+                val layoutCalculator = findViewById<View>(R.id.layoutCalculator)
+                if (layoutCalculator.visibility != View.VISIBLE &&
+                    systemSolverManager.layoutSystemSolver.visibility != View.VISIBLE &&
+                    graphModeManager.layoutGraphMode.visibility != View.VISIBLE &&
+                    matrixModeManager.layoutMatrixMode.visibility != View.VISIBLE &&
+                    trigSolverManager.layoutTrigSolver.visibility != View.VISIBLE &&
+                    section3DManager.layoutSection3D.visibility != View.VISIBLE &&
+                    unitConverterManager.layoutUnitConverter.visibility != View.VISIBLE &&
+                    inequalitySolverManager.layoutInequalitySolver.visibility != View.VISIBLE
+                ) {
+                    layoutModeHub.visibility = View.VISIBLE
+                }
+            },
+            onSendFormula = { target, casExpr ->
+                openTargetModeWithFormula(target, casExpr)
+            }
+        )
+
         initModeHub()
         initTheme()
+    }
+
+    private fun openTargetModeWithFormula(target: ScanTarget, casExpr: String) {
+        val layoutModeHub = findViewById<View>(R.id.layoutModeHub)
+        val layoutCalculator = findViewById<View>(R.id.layoutCalculator)
+        val layoutSystemSolver = systemSolverManager.layoutSystemSolver
+        val layoutGraphMode = graphModeManager.layoutGraphMode
+        val layoutMatrixMode = matrixModeManager.layoutMatrixMode
+        val layoutTrigSolver = trigSolverManager.layoutTrigSolver
+        val layoutSection3D = section3DManager.layoutSection3D
+        val layoutUnitConverter = unitConverterManager.layoutUnitConverter
+        val layoutInequalitySolver = inequalitySolverManager.layoutInequalitySolver
+
+        layoutModeHub.visibility = View.GONE
+        layoutSystemSolver.visibility = View.GONE
+        layoutGraphMode.visibility = View.GONE
+        layoutMatrixMode.visibility = View.GONE
+        layoutTrigSolver.visibility = View.GONE
+        layoutSection3D.visibility = View.GONE
+        layoutUnitConverter.visibility = View.GONE
+        layoutInequalitySolver.visibility = View.GONE
+        layoutCalculator.visibility = View.GONE
+
+        when (target) {
+            ScanTarget.CALCULATOR -> {
+                layoutCalculator.visibility = View.VISIBLE
+                casioDisplay.loadExpression(casExpr)
+                if (casExpr.contains("=")) {
+                    solveCurrentEquation()
+                } else {
+                    executeCalculation()
+                }
+            }
+            ScanTarget.INEQUALITY -> {
+                layoutInequalitySolver.visibility = View.VISIBLE
+                inequalitySolverManager.loadFormulaAndSolve(casExpr)
+            }
+            ScanTarget.TRIG -> {
+                layoutTrigSolver.visibility = View.VISIBLE
+                trigSolverManager.loadFormulaAndSolve(casExpr)
+            }
+        }
     }
 
     private fun initTheme() {
@@ -265,6 +428,8 @@ class MainActivity : AppCompatActivity() {
         trigSolverManager.refreshTheme()
         section3DManager.refreshTheme()
         unitConverterManager.refreshTheme()
+        inequalitySolverManager.refreshTheme()
+        formulaScannerManager.refreshTheme()
     }
 
     private fun initModeHub() {
@@ -276,8 +441,10 @@ class MainActivity : AppCompatActivity() {
         val layoutTrigSolver = trigSolverManager.layoutTrigSolver
         val layoutSection3D = section3DManager.layoutSection3D
         val layoutUnitConverter = unitConverterManager.layoutUnitConverter
+        val layoutInequalitySolver = inequalitySolverManager.layoutInequalitySolver
         val btnOpenMenu = findViewById<View>(R.id.btnOpenMenu)
         val btnOpenGuide = findViewById<View>(R.id.btnOpenGuide)
+        val btnOpenScanner = findViewById<View>(R.id.btnOpenScanner)
         val cardModeCalc = findViewById<View>(R.id.cardModeCalc)
         val cardModeSystem = findViewById<View>(R.id.cardModeSystem)
         val cardModeGraph = findViewById<View>(R.id.cardModeGraph)
@@ -285,6 +452,13 @@ class MainActivity : AppCompatActivity() {
         val cardModeTrig = findViewById<View>(R.id.cardModeTrig)
         val cardModeSection3D = findViewById<View>(R.id.cardModeSection3D)
         val cardModeConverter = findViewById<View>(R.id.cardModeConverter)
+        val cardModeInequality = findViewById<View>(R.id.cardModeInequality)
+
+        btnOpenScanner?.setOnClickListener {
+            triggerKeyHaptic(it)
+            layoutModeHub.visibility = View.GONE
+            formulaScannerManager.openScanner()
+        }
 
         btnOpenMenu?.setOnClickListener {
             triggerKeyHaptic(it)
@@ -305,6 +479,8 @@ class MainActivity : AppCompatActivity() {
             layoutTrigSolver.visibility = View.GONE
             layoutSection3D.visibility = View.GONE
             layoutUnitConverter.visibility = View.GONE
+            layoutInequalitySolver.visibility = View.GONE
+            formulaScannerManager.layoutFormulaScanner.visibility = View.GONE
             layoutCalculator.visibility = View.VISIBLE
         }
 
@@ -317,6 +493,8 @@ class MainActivity : AppCompatActivity() {
             layoutTrigSolver.visibility = View.GONE
             layoutSection3D.visibility = View.GONE
             layoutUnitConverter.visibility = View.GONE
+            layoutInequalitySolver.visibility = View.GONE
+            formulaScannerManager.layoutFormulaScanner.visibility = View.GONE
             layoutSystemSolver.visibility = View.VISIBLE
         }
 
@@ -335,6 +513,8 @@ class MainActivity : AppCompatActivity() {
             layoutTrigSolver.visibility = View.GONE
             layoutSection3D.visibility = View.GONE
             layoutUnitConverter.visibility = View.GONE
+            layoutInequalitySolver.visibility = View.GONE
+            formulaScannerManager.layoutFormulaScanner.visibility = View.GONE
             layoutGraphMode.visibility = View.VISIBLE
         }
 
@@ -353,6 +533,8 @@ class MainActivity : AppCompatActivity() {
             layoutTrigSolver.visibility = View.GONE
             layoutSection3D.visibility = View.GONE
             layoutUnitConverter.visibility = View.GONE
+            layoutInequalitySolver.visibility = View.GONE
+            formulaScannerManager.layoutFormulaScanner.visibility = View.GONE
             layoutMatrixMode.visibility = View.VISIBLE
         }
 
@@ -371,6 +553,8 @@ class MainActivity : AppCompatActivity() {
             layoutMatrixMode.visibility = View.GONE
             layoutSection3D.visibility = View.GONE
             layoutUnitConverter.visibility = View.GONE
+            layoutInequalitySolver.visibility = View.GONE
+            formulaScannerManager.layoutFormulaScanner.visibility = View.GONE
             layoutTrigSolver.visibility = View.VISIBLE
         }
 
@@ -389,6 +573,8 @@ class MainActivity : AppCompatActivity() {
             layoutMatrixMode.visibility = View.GONE
             layoutTrigSolver.visibility = View.GONE
             layoutUnitConverter.visibility = View.GONE
+            layoutInequalitySolver.visibility = View.GONE
+            formulaScannerManager.layoutFormulaScanner.visibility = View.GONE
             layoutSection3D.visibility = View.VISIBLE
         }
 
@@ -407,6 +593,8 @@ class MainActivity : AppCompatActivity() {
             layoutMatrixMode.visibility = View.GONE
             layoutTrigSolver.visibility = View.GONE
             layoutSection3D.visibility = View.GONE
+            layoutInequalitySolver.visibility = View.GONE
+            formulaScannerManager.layoutFormulaScanner.visibility = View.GONE
             layoutUnitConverter.visibility = View.VISIBLE
         }
 
@@ -416,8 +604,31 @@ class MainActivity : AppCompatActivity() {
             layoutModeHub.visibility = View.VISIBLE
         }
 
+        cardModeInequality?.setOnClickListener {
+            triggerKeyHaptic(it)
+            layoutModeHub.visibility = View.GONE
+            layoutCalculator.visibility = View.GONE
+            layoutSystemSolver.visibility = View.GONE
+            layoutGraphMode.visibility = View.GONE
+            layoutMatrixMode.visibility = View.GONE
+            layoutTrigSolver.visibility = View.GONE
+            layoutSection3D.visibility = View.GONE
+            layoutUnitConverter.visibility = View.GONE
+            formulaScannerManager.layoutFormulaScanner.visibility = View.GONE
+            layoutInequalitySolver.visibility = View.VISIBLE
+        }
+
+        inequalitySolverManager.btnIneqBack.setOnClickListener {
+            triggerKeyHaptic(it)
+            layoutInequalitySolver.visibility = View.GONE
+            layoutModeHub.visibility = View.VISIBLE
+        }
+
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
+                if (formulaScannerManager.handleBackPress()) {
+                    return
+                }
                 if (layoutSystemSolver.visibility == View.VISIBLE) {
                     layoutSystemSolver.visibility = View.GONE
                     layoutModeHub.visibility = View.VISIBLE
@@ -435,6 +646,9 @@ class MainActivity : AppCompatActivity() {
                     layoutModeHub.visibility = View.VISIBLE
                 } else if (layoutUnitConverter.visibility == View.VISIBLE) {
                     layoutUnitConverter.visibility = View.GONE
+                    layoutModeHub.visibility = View.VISIBLE
+                } else if (layoutInequalitySolver.visibility == View.VISIBLE) {
+                    layoutInequalitySolver.visibility = View.GONE
                     layoutModeHub.visibility = View.VISIBLE
                 } else if (layoutModeHub.visibility != View.VISIBLE) {
                     layoutModeHub.visibility = View.VISIBLE
@@ -578,7 +792,7 @@ class MainActivity : AppCompatActivity() {
                 casioDisplay.insertText("10^(")
                 resetShift()
             } else {
-                casioDisplay.insertText("log(")
+                casioDisplay.insertLogBase()
             }
         }
         bindKey(R.id.btnSqrt) {
@@ -667,6 +881,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         bindKey(R.id.btnAc, isHeavy = true) {
+            cancelPendingPreview()
+            casioDisplay.setLivePreview(null)
             casioDisplay.clearAll()
             lastSolveResult = null
             btnCasSteps.visibility = View.GONE
@@ -679,8 +895,16 @@ class MainActivity : AppCompatActivity() {
             if (isShiftActive) resetShift()
         }
 
-        bindKey(R.id.btnDel, isHeavy = true) {
+        val btnDel = findViewById<View>(R.id.btnDel)
+        btnDel?.bindRepeatingCrispKey(isHeavy = true) {
+            val rawBefore = casioDisplay.getRawExpression()
+            val containerBefore = casioDisplay.currentContainer
+            val cursorBefore = casioDisplay.cursorIndex
             casioDisplay.deleteAtCursor()
+            val rawAfter = casioDisplay.getRawExpression()
+            val containerAfter = casioDisplay.currentContainer
+            val cursorAfter = casioDisplay.cursorIndex
+            (rawBefore != rawAfter) || (containerBefore !== containerAfter) || (cursorBefore != cursorAfter)
         }
 
         bindKey(R.id.btnSolveEquation, isHeavy = true) {
@@ -714,7 +938,7 @@ class MainActivity : AppCompatActivity() {
         setDualKeyText(R.id.btnCos, "cos⁻¹", "cos", hintSizeSp = 9, mainSizeSp = 13, hintColor = hintColor, mainColor = mainColor)
         setDualKeyText(R.id.btnTan, "tan⁻¹", "tan", hintSizeSp = 9, mainSizeSp = 13, hintColor = hintColor, mainColor = mainColor)
         setDualKeyText(R.id.btnLn, "eˣ", "ln", hintSizeSp = 9, mainSizeSp = 13, hintColor = hintColor, mainColor = mainColor)
-        setDualKeyText(R.id.btnLog, "10ˣ", "log", hintSizeSp = 9, mainSizeSp = 13, hintColor = hintColor, mainColor = mainColor)
+        setDualKeyText(R.id.btnLog, "10ˣ", "log□", hintSizeSp = 9, mainSizeSp = 13, hintColor = hintColor, mainColor = mainColor)
 
         // Ряд 1: дробь, корень, квадрат, степень, pi, скобки
         setDualKeyText(R.id.btnFraction, "■\u00A0■/□", "■/□", hintSizeSp = 8, mainSizeSp = 13, mainColor = hintColor)
@@ -775,8 +999,26 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun initNavigationPad() {
-        bindKey(R.id.btnArrowLeft) { casioDisplay.moveLeft() }
-        bindKey(R.id.btnArrowRight) { casioDisplay.moveRight() }
+        val btnLeft = findViewById<View>(R.id.btnArrowLeft)
+        btnLeft?.bindRepeatingCrispKey(isHeavy = false) {
+            val containerBefore = casioDisplay.currentContainer
+            val cursorBefore = casioDisplay.cursorIndex
+            casioDisplay.moveLeft()
+            val containerAfter = casioDisplay.currentContainer
+            val cursorAfter = casioDisplay.cursorIndex
+            (containerBefore !== containerAfter) || (cursorBefore != cursorAfter)
+        }
+
+        val btnRight = findViewById<View>(R.id.btnArrowRight)
+        btnRight?.bindRepeatingCrispKey(isHeavy = false) {
+            val containerBefore = casioDisplay.currentContainer
+            val cursorBefore = casioDisplay.cursorIndex
+            casioDisplay.moveRight()
+            val containerAfter = casioDisplay.currentContainer
+            val cursorAfter = casioDisplay.cursorIndex
+            (containerBefore !== containerAfter) || (cursorBefore != cursorAfter)
+        }
+
         bindKey(R.id.btnArrowUp) { casioDisplay.jumpUp() }
         bindKey(R.id.btnArrowDown) { casioDisplay.jumpDown() }
     }
@@ -791,6 +1033,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun executeCalculation() {
+        cancelPendingPreview()
+        casioDisplay.setLivePreview(null)
         casioDisplay.autoCloseUnclosedParens()
         val raw = casioDisplay.getRawExpression().trim()
         if (raw.isEmpty()) return
@@ -813,6 +1057,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun solveCurrentEquation(specificVar: String? = null) {
+        cancelPendingPreview()
+        casioDisplay.setLivePreview(null)
         casioDisplay.autoCloseUnclosedParens()
         val raw = casioDisplay.getRawExpression().trim()
         if (!raw.contains("=")) {

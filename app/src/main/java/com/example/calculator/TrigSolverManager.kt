@@ -122,6 +122,59 @@ class TrigSolverManager(
         cell.requestFocus()
     }
 
+    fun loadFormulaAndSolve(casExpr: String) {
+        var cleanExpr = casExpr.trim()
+        cleanExpr = cleanExpr.replace(Regex("""\^\(([^()]+)\)""")) { match ->
+            "^" + match.groupValues[1]
+        }
+        cleanExpr = unwrapDoubleFractions(cleanExpr)
+        etTrigEquation.setText(cleanExpr)
+        setActiveCell(etTrigEquation)
+        solve()
+    }
+
+    private fun unwrapDoubleFractions(str: String): String {
+        var s = str
+        var changed = true
+        while (changed) {
+            changed = false
+            var i = 0
+            while (i < s.length - 3) {
+                if (s[i] == '(' && s[i + 1] == '(') {
+                    val endA = findMatchingParen(s, i + 1)
+                    if (endA != -1 && endA + 1 < s.length && s[endA + 1] == '/') {
+                        val startB = endA + 2
+                        if (startB < s.length && s[startB] == '(') {
+                            val endB = findMatchingParen(s, startB)
+                            if (endB != -1 && endB + 1 < s.length && s[endB + 1] == ')') {
+                                val numWithParens = s.substring(i + 1, endA + 1)
+                                val denWithParens = s.substring(startB, endB + 1)
+                                s = s.substring(0, i) + "$numWithParens/$denWithParens" + s.substring(endB + 2)
+                                changed = true
+                                break
+                            }
+                        }
+                    }
+                }
+                i++
+            }
+        }
+        return s
+    }
+
+    private fun findMatchingParen(s: String, startIdx: Int): Int {
+        if (startIdx >= s.length || s[startIdx] != '(') return -1
+        var depth = 0
+        for (i in startIdx until s.length) {
+            if (s[i] == '(') depth++
+            else if (s[i] == ')') {
+                depth--
+                if (depth == 0) return i
+            }
+        }
+        return -1
+    }
+
     private fun getCellBackground(isFocused: Boolean): Drawable {
         val dp = rootLayout.resources.displayMetrics.density
         val isDark = ThemeManager.isDarkTheme(rootLayout.context)
