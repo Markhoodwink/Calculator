@@ -1463,6 +1463,151 @@ class CasioDisplayView @JvmOverloads constructor(
         val totalHeight: Float get() = ascent + descent
     }
 
+    private fun drawStretchedBracket(
+        canvas: Canvas,
+        symbol: String,
+        x: Float,
+        baselineY: Float,
+        box: StretchBracketBox,
+        paint: Paint,
+        dp: Float
+    ) {
+        val top = baselineY - box.ascent
+        val bottom = baselineY + box.descent
+        val h = bottom - top
+
+        val bracketPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = paint.color
+            style = Paint.Style.STROKE
+            strokeCap = Paint.Cap.ROUND
+            strokeWidth = (paint.textSize * 0.072f).coerceIn(1.6f * dp, 3.0f * dp)
+        }
+
+        when (symbol) {
+            "(" -> {
+                val startX = x + box.width * 0.78f
+                val startY = top + 1f * dp
+                val endX = x + box.width * 0.78f
+                val endY = bottom - 1f * dp
+                val ctrlX = x + box.width * 0.04f
+
+                val path = Path().apply {
+                    moveTo(startX, startY)
+                    cubicTo(
+                        ctrlX, top + h * 0.24f,
+                        ctrlX, bottom - h * 0.24f,
+                        endX, endY
+                    )
+                }
+                canvas.drawPath(path, bracketPaint)
+            }
+            ")" -> {
+                val startX = x + box.width * 0.22f
+                val startY = top + 1f * dp
+                val endX = x + box.width * 0.22f
+                val endY = bottom - 1f * dp
+                val ctrlX = x + box.width * 0.96f
+
+                val path = Path().apply {
+                    moveTo(startX, startY)
+                    cubicTo(
+                        ctrlX, top + h * 0.24f,
+                        ctrlX, bottom - h * 0.24f,
+                        endX, endY
+                    )
+                }
+                canvas.drawPath(path, bracketPaint)
+            }
+            "|" -> {
+                val xMid = x + box.width / 2f
+                canvas.drawLine(xMid, top + 1f * dp, xMid, bottom - 1f * dp, bracketPaint)
+            }
+        }
+    }
+
+    private fun computeBracketBoxesForContainer(
+        container: MathContainer,
+        isSuperscript: Boolean = false
+    ): Array<StretchBracketBox?> {
+        val paint = if (isSuperscript) smallTextPaint else inputTextPaint
+        val n = container.items.size
+        if (n == 0) return emptyArray()
+
+        val baseWidths = FloatArray(n)
+        val baseAscents = FloatArray(n)
+        val baseDescents = FloatArray(n)
+        val tokens = ArrayList<String?>(n)
+
+        val fm = paint.fontMetrics
+        val symAscent = -fm.ascent
+        val symDescent = fm.descent
+
+        for (i in 0 until n) {
+            val item = container.items[i]
+            tokens.add((item as? MathItem.Symbol)?.text)
+            when (item) {
+                is MathItem.Symbol -> {
+                    baseWidths[i] = paint.measureText(item.text)
+                    baseAscents[i] = symAscent
+                    baseDescents[i] = symDescent
+                }
+                is MathItem.Fraction -> {
+                    val numM = measureContainer(item.num)
+                    val denM = measureContainer(item.den)
+                    val fracW = max(numM.width, denM.width) + 12f * density
+                    baseWidths[i] = fracW + 4f * density
+                    baseAscents[i] = numM.totalHeight + 6f * density
+                    baseDescents[i] = denM.totalHeight + 6f * density
+                }
+                is MathItem.MixedFraction -> {
+                    val wM = measureContainer(item.whole)
+                    val numM = measureContainer(item.num)
+                    val denM = measureContainer(item.den)
+                    val fracW = max(numM.width, denM.width) + 12f * density
+                    baseWidths[i] = wM.width + 4f * density + fracW + 4f * density
+                    baseAscents[i] = max(wM.ascent, numM.totalHeight + 6f * density)
+                    baseDescents[i] = max(wM.descent, denM.totalHeight + 6f * density)
+                }
+                is MathItem.Sqrt -> {
+                    val inM = measureContainer(item.inner)
+                    val hookW = if (item.degree != null) 17f * density else 14f * density
+                    baseWidths[i] = hookW + inM.width + 4f * density
+                    val degAscent = if (item.degree != null) inM.ascent + 8f * density else inM.ascent + 6f * density
+                    baseAscents[i] = max(inM.ascent + 6f * density, degAscent)
+                    baseDescents[i] = inM.descent
+                }
+                is MathItem.Superscript -> {
+                    val expM = measureContainer(item.exp, isSuperscript = true)
+                    baseWidths[i] = expM.width + 2f * density
+                    baseAscents[i] = 10f * density + expM.ascent
+                    baseDescents[i] = 0f
+                }
+                is MathItem.Combinatorics -> {
+                    val symW = paint.measureText(item.symbol)
+                    val upperM = measureContainer(item.upper, isSuperscript = true)
+                    val lowerM = measureContainer(item.lower, isSuperscript = true)
+                    baseWidths[i] = symW + max(upperM.width, lowerM.width) + 4f * density
+                    baseAscents[i] = 8f * density + upperM.ascent
+                    baseDescents[i] = 6f * density + lowerM.descent
+                }
+                is MathItem.LogBase -> {
+                    val logW = paint.measureText("log")
+                    val baseM = measureContainer(item.base, isSuperscript = true)
+                    val openW = paint.measureText("(")
+                    val argM = measureContainer(item.arg, isSuperscript = false)
+                    val closeW = paint.measureText(")")
+                    baseWidths[i] = logW + baseM.width + openW + argM.width + closeW
+                    val baseAscent = baseM.ascent - 6f * density
+                    val baseDescent = 6f * density + baseM.descent
+                    baseAscents[i] = maxOf(baseAscent, argM.ascent)
+                    baseDescents[i] = maxOf(baseDescent, argM.descent)
+                }
+            }
+        }
+
+        return computeAdaptiveBracketBoxes(tokens, baseWidths, baseAscents, baseDescents, paint.textSize, density)
+    }
+
     private fun measureContainer(container: MathContainer, isSuperscript: Boolean = false): MeasureResult {
         val paint = if (isSuperscript) smallTextPaint else inputTextPaint
         if (container.isEmpty()) {
@@ -1471,11 +1616,23 @@ class CasioDisplayView @JvmOverloads constructor(
             val d = if (isSuperscript) 4f * density else 6f * density
             return MeasureResult(w, a, d)
         }
+
+        val stretchBoxes = computeBracketBoxesForContainer(container, isSuperscript)
         var totalW = 0f
         var maxAscent = if (isSuperscript) 12f * density else 16f * density
         var maxDescent = if (isSuperscript) 4f * density else 6f * density
 
-        for (item in container.items) {
+        for (i in 0 until container.items.size) {
+            val item = container.items[i]
+            val box = if (i < stretchBoxes.size) stretchBoxes[i] else null
+
+            if (box?.isStretched == true) {
+                totalW += box.width
+                if (box.ascent > maxAscent) maxAscent = box.ascent
+                if (box.descent > maxDescent) maxDescent = box.descent
+                continue
+            }
+
             when (item) {
                 is MathItem.Symbol -> {
                     totalW += paint.measureText(item.text)
@@ -1513,7 +1670,13 @@ class CasioDisplayView @JvmOverloads constructor(
                 is MathItem.Superscript -> {
                     val expM = measureContainer(item.exp, isSuperscript = true)
                     totalW += expM.width + 2f * density
-                    val supAscent = 10f * density + expM.ascent
+                    val prevBox = if (i > 0 && i - 1 < stretchBoxes.size) stretchBoxes[i - 1] else null
+                    val supOffset = if (prevBox?.isStretched == true) {
+                        maxOf(10f * density, prevBox.ascent - 6f * density)
+                    } else {
+                        10f * density
+                    }
+                    val supAscent = supOffset + expM.ascent
                     if (supAscent > maxAscent) maxAscent = supAscent
                 }
                 is MathItem.Combinatorics -> {
@@ -1530,9 +1693,35 @@ class CasioDisplayView @JvmOverloads constructor(
                 is MathItem.LogBase -> {
                     val logW = paint.measureText("log")
                     val baseM = measureContainer(item.base, isSuperscript = true)
-                    val openW = paint.measureText("(")
                     val argM = measureContainer(item.arg, isSuperscript = false)
-                    val closeW = paint.measureText(")")
+
+                    val baseAsc = -paint.fontMetrics.ascent
+                    val baseDesc = paint.fontMetrics.descent
+                    val baseH = baseAsc + baseDesc
+                    val enclosedH = argM.ascent + argM.descent
+
+                    val openW: Float
+                    val closeW: Float
+                    val logAsc: Float
+                    val logDesc: Float
+
+                    if (enclosedH > baseH * 1.15f || argM.ascent > baseAsc * 1.15f || argM.descent > baseDesc * 1.25f) {
+                        val pad = maxOf(2.5f * density, paint.textSize * 0.08f)
+                        val pairAsc = maxOf(baseAsc, argM.ascent + pad)
+                        val pairDesc = maxOf(baseDesc, argM.descent + pad)
+                        val totalH = pairAsc + pairDesc
+                        val stretchW = (paint.measureText("(") + (totalH - baseH) * 0.10f).coerceIn(paint.measureText("("), paint.textSize * 0.70f)
+                        openW = stretchW
+                        closeW = stretchW
+                        logAsc = pairAsc
+                        logDesc = pairDesc
+                    } else {
+                        openW = paint.measureText("(")
+                        closeW = paint.measureText(")")
+                        logAsc = argM.ascent
+                        logDesc = argM.descent
+                    }
+
                     val itemW = logW + baseM.width + openW + argM.width + closeW
                     totalW += itemW
 
@@ -1540,8 +1729,8 @@ class CasioDisplayView @JvmOverloads constructor(
                     val baseDescent = 6f * density + baseM.descent
                     if (baseAscent > maxAscent) maxAscent = baseAscent
                     if (baseDescent > maxDescent) maxDescent = baseDescent
-                    if (argM.ascent > maxAscent) maxAscent = argM.ascent
-                    if (argM.descent > maxDescent) maxDescent = argM.descent
+                    if (logAsc > maxAscent) maxAscent = logAsc
+                    if (logDesc > maxDescent) maxDescent = logDesc
                 }
             }
         }
@@ -1560,15 +1749,20 @@ class CasioDisplayView @JvmOverloads constructor(
             return null
         }
 
+        val stretchBoxes = computeBracketBoxesForContainer(container, isSuperscript)
+
         for (i in 0..container.items.size) {
             if (currentContainer === container && cursorIndex == i) {
                 return currentX
             }
             if (i >= container.items.size) break
 
+            val box = if (i < stretchBoxes.size) stretchBoxes[i] else null
+
             when (val item = container.items[i]) {
                 is MathItem.Symbol -> {
-                    currentX += paint.measureText(item.text)
+                    val symW = box?.width ?: paint.measureText(item.text)
+                    currentX += symW
                 }
                 is MathItem.Fraction -> {
                     val numM = measureContainer(item.num)
@@ -1626,9 +1820,23 @@ class CasioDisplayView @JvmOverloads constructor(
                 is MathItem.LogBase -> {
                     val logW = paint.measureText("log")
                     val baseM = measureContainer(item.base, isSuperscript = true)
-                    val openW = paint.measureText("(")
                     val argM = measureContainer(item.arg, isSuperscript = false)
-                    val closeW = paint.measureText(")")
+
+                    val baseAsc = -paint.fontMetrics.ascent
+                    val baseDesc = paint.fontMetrics.descent
+                    val baseH = baseAsc + baseDesc
+                    val enclosedH = argM.ascent + argM.descent
+
+                    val openW = if (enclosedH > baseH * 1.15f || argM.ascent > baseAsc * 1.15f || argM.descent > baseDesc * 1.25f) {
+                        val pad = maxOf(2.5f * density, paint.textSize * 0.08f)
+                        val pairAsc = maxOf(baseAsc, argM.ascent + pad)
+                        val pairDesc = maxOf(baseDesc, argM.descent + pad)
+                        val totalH = pairAsc + pairDesc
+                        (paint.measureText("(") + (totalH - baseH) * 0.10f).coerceIn(paint.measureText("("), paint.textSize * 0.70f)
+                    } else {
+                        paint.measureText("(")
+                    }
+                    val closeW = openW
 
                     val inBase = getCursorXInContainer(item.base, currentX + logW, isSuperscript = true)
                     if (inBase != null) return inBase
@@ -1800,6 +2008,7 @@ class CasioDisplayView @JvmOverloads constructor(
         }
 
         val bracketInfo = analyzeBrackets(container)
+        val stretchBoxes = computeBracketBoxesForContainer(container, isSuperscript)
 
         for (i in 0..container.items.size) {
             if (currentContainer === container && cursorIndex == i && isCursorVisible) {
@@ -1815,19 +2024,29 @@ class CasioDisplayView @JvmOverloads constructor(
 
             if (i >= container.items.size) break
 
+            val box = if (i < stretchBoxes.size) stretchBoxes[i] else null
+
             when (val item = container.items[i]) {
                 is MathItem.Symbol -> {
                     val isMatchedActive = bracketInfo.activeMatchedPair != null &&
                             (i == bracketInfo.activeMatchedPair.first || i == bracketInfo.activeMatchedPair.second)
                     val isUnmatched = bracketInfo.unmatchedIndices.contains(i)
 
-                    val symW = paint.measureText(item.text)
+                    val symW = box?.width ?: paint.measureText(item.text)
+
                     if (isMatchedActive || isUnmatched) {
-                        val fm = paint.fontMetrics
                         val rectLeft = currentX - 1.5f * density
-                        val rectTop = baselineY + fm.ascent - 0.5f * density
+                        val rectTop = if (box?.isStretched == true) {
+                            baselineY - box.ascent - 0.5f * density
+                        } else {
+                            baselineY + paint.fontMetrics.ascent - 0.5f * density
+                        }
                         val rectRight = currentX + symW + 1.5f * density
-                        val rectBottom = baselineY + fm.descent + 0.5f * density
+                        val rectBottom = if (box?.isStretched == true) {
+                            baselineY + box.descent + 0.5f * density
+                        } else {
+                            baselineY + paint.fontMetrics.descent + 0.5f * density
+                        }
                         val radius = 3.5f * density
 
                         val bgPaint = if (isMatchedActive) matchedBracketBgPaint else unmatchedBracketBgPaint
@@ -1837,7 +2056,11 @@ class CasioDisplayView @JvmOverloads constructor(
                         canvas.drawRoundRect(rectLeft, rectTop, rectRight, rectBottom, radius, radius, borderPaint)
                     }
 
-                    canvas.drawText(item.text, currentX, baselineY, paint)
+                    if (box?.isStretched == true) {
+                        drawStretchedBracket(canvas, item.text, currentX, baselineY, box, paint, density)
+                    } else {
+                        canvas.drawText(item.text, currentX, baselineY, paint)
+                    }
                     currentX += symW
                 }
                 is MathItem.Fraction -> {
@@ -1920,7 +2143,12 @@ class CasioDisplayView @JvmOverloads constructor(
                 }
                 is MathItem.Superscript -> {
                     val expM = measureContainer(item.exp, isSuperscript = true)
-                    val expBaseY = baselineY - 10f * density
+                    val prevBox = if (i > 0 && i - 1 < stretchBoxes.size) stretchBoxes[i - 1] else null
+                    val expBaseY = if (prevBox?.isStretched == true) {
+                        baselineY - maxOf(10f * density, prevBox.ascent - 6f * density)
+                    } else {
+                        baselineY - 10f * density
+                    }
                     drawContainer(canvas, item.exp, currentX, expBaseY, isSuperscript = true)
                     currentX += expM.width + 2f * density
                 }
@@ -1950,18 +2178,40 @@ class CasioDisplayView @JvmOverloads constructor(
                     val baseM = measureContainer(item.base, isSuperscript = true)
 
                     val openStartX = baseStartX + baseM.width
-                    canvas.drawText("(", openStartX, baselineY, paint)
-                    val openW = paint.measureText("(")
-
-                    val argStartX = openStartX + openW
-                    drawContainer(canvas, item.arg, argStartX, baselineY, isSuperscript = false)
                     val argM = measureContainer(item.arg, isSuperscript = false)
 
-                    val closeStartX = argStartX + argM.width
-                    canvas.drawText(")", closeStartX, baselineY, paint)
-                    val closeW = paint.measureText(")")
+                    val baseAsc = -paint.fontMetrics.ascent
+                    val baseDesc = paint.fontMetrics.descent
+                    val baseH = baseAsc + baseDesc
+                    val enclosedH = argM.ascent + argM.descent
 
-                    currentX = closeStartX + closeW
+                    if (enclosedH > baseH * 1.15f || argM.ascent > baseAsc * 1.15f || argM.descent > baseDesc * 1.25f) {
+                        val pad = maxOf(2.5f * density, paint.textSize * 0.08f)
+                        val pairAsc = maxOf(baseAsc, argM.ascent + pad)
+                        val pairDesc = maxOf(baseDesc, argM.descent + pad)
+                        val totalH = pairAsc + pairDesc
+                        val stretchW = (paint.measureText("(") + (totalH - baseH) * 0.10f).coerceIn(paint.measureText("("), paint.textSize * 0.70f)
+                        val logBox = StretchBracketBox(stretchW, pairAsc, pairDesc, isStretched = true)
+
+                        drawStretchedBracket(canvas, "(", openStartX, baselineY, logBox, paint, density)
+                        val argStartX = openStartX + stretchW
+                        drawContainer(canvas, item.arg, argStartX, baselineY, isSuperscript = false)
+                        val closeStartX = argStartX + argM.width
+                        drawStretchedBracket(canvas, ")", closeStartX, baselineY, logBox, paint, density)
+                        currentX = closeStartX + stretchW
+                    } else {
+                        canvas.drawText("(", openStartX, baselineY, paint)
+                        val openW = paint.measureText("(")
+
+                        val argStartX = openStartX + openW
+                        drawContainer(canvas, item.arg, argStartX, baselineY, isSuperscript = false)
+
+                        val closeStartX = argStartX + argM.width
+                        canvas.drawText(")", closeStartX, baselineY, paint)
+                        val closeW = paint.measureText(")")
+
+                        currentX = closeStartX + closeW
+                    }
                 }
             }
         }
@@ -2152,11 +2402,14 @@ class CasioDisplayView @JvmOverloads constructor(
 
         val paint = if (isSuperscript) smallTextPaint else inputTextPaint
         var currentX = startX
+        val stretchBoxes = computeBracketBoxesForContainer(container, isSuperscript)
 
         for (i in 0 until container.items.size) {
+            val box = if (i < stretchBoxes.size) stretchBoxes[i] else null
+
             when (val item = container.items[i]) {
                 is MathItem.Symbol -> {
-                    val symW = paint.measureText(item.text)
+                    val symW = box?.width ?: paint.measureText(item.text)
                     if (tapX < currentX + symW / 2f) {
                         return Pair(container, i)
                     }
@@ -2231,7 +2484,12 @@ class CasioDisplayView @JvmOverloads constructor(
                 is MathItem.Superscript -> {
                     val expM = measureContainer(item.exp, isSuperscript = true)
                     val expW = expM.width + 2f * density
-                    val expBaseY = baselineY - 10f * density
+                    val prevBox = if (i > 0 && i - 1 < stretchBoxes.size) stretchBoxes[i - 1] else null
+                    val expBaseY = if (prevBox?.isStretched == true) {
+                        baselineY - maxOf(10f * density, prevBox.ascent - 6f * density)
+                    } else {
+                        baselineY - 10f * density
+                    }
 
                     if (tapX < currentX) {
                         return Pair(container, i)
@@ -2263,9 +2521,23 @@ class CasioDisplayView @JvmOverloads constructor(
                 is MathItem.LogBase -> {
                     val logW = paint.measureText("log")
                     val baseM = measureContainer(item.base, isSuperscript = true)
-                    val openW = paint.measureText("(")
                     val argM = measureContainer(item.arg, isSuperscript = false)
-                    val closeW = paint.measureText(")")
+
+                    val baseAsc = -paint.fontMetrics.ascent
+                    val baseDesc = paint.fontMetrics.descent
+                    val baseH = baseAsc + baseDesc
+                    val enclosedH = argM.ascent + argM.descent
+
+                    val openW = if (enclosedH > baseH * 1.15f || argM.ascent > baseAsc * 1.15f || argM.descent > baseDesc * 1.25f) {
+                        val pad = maxOf(2.5f * density, paint.textSize * 0.08f)
+                        val pairAsc = maxOf(baseAsc, argM.ascent + pad)
+                        val pairDesc = maxOf(baseDesc, argM.descent + pad)
+                        val totalH = pairAsc + pairDesc
+                        (paint.measureText("(") + (totalH - baseH) * 0.10f).coerceIn(paint.measureText("("), paint.textSize * 0.70f)
+                    } else {
+                        paint.measureText("(")
+                    }
+                    val closeW = openW
                     val totalItemW = logW + baseM.width + openW + argM.width + closeW
 
                     if (tapX < currentX) {
@@ -2389,5 +2661,99 @@ class CasioDisplayView @JvmOverloads constructor(
     override fun performClick(): Boolean {
         super.performClick()
         return true
+    }
+
+    companion object {
+        data class StretchBracketBox(
+            val width: Float,
+            val ascent: Float,
+            val descent: Float,
+            val isStretched: Boolean
+        )
+
+        internal fun computeAdaptiveBracketBoxes(
+            tokens: List<String?>,
+            baseWidths: FloatArray,
+            baseAscents: FloatArray,
+            baseDescents: FloatArray,
+            textSize: Float,
+            density: Float
+        ): Array<StretchBracketBox?> {
+            val n = tokens.size
+            val result = Array<StretchBracketBox?>(n) { null }
+            if (n == 0) return result
+
+            val matchedPairs = mutableListOf<Pair<Int, Int>>()
+
+            // 1. Match '(' and ')'
+            val parenStack = mutableListOf<Int>()
+            for (i in 0 until n) {
+                val t = tokens[i]
+                if (t == "(") {
+                    parenStack.add(i)
+                } else if (t == ")") {
+                    if (parenStack.isNotEmpty()) {
+                        val openIdx = parenStack.removeAt(parenStack.size - 1)
+                        matchedPairs.add(Pair(openIdx, i))
+                    }
+                }
+            }
+
+            // 2. Match '|' and '|'
+            val pipeStack = mutableListOf<Int>()
+            val openingTokens = setOf("(", "|", "+", "-", "*", "/", "=", ",", "^", "sqrt", "log", "cbrt")
+            for (i in 0 until n) {
+                val t = tokens[i]
+                if (t == "|") {
+                    val prev = if (i > 0) tokens[i - 1] else null
+                    val isOpeningContext = pipeStack.isEmpty() || (prev != null && prev in openingTokens)
+                    if (isOpeningContext) {
+                        pipeStack.add(i)
+                    } else {
+                        val openIdx = pipeStack.removeAt(pipeStack.size - 1)
+                        matchedPairs.add(Pair(openIdx, i))
+                    }
+                }
+            }
+
+            // 3. Process matched pairs in innermost-to-outermost order (sorted by closeIdx - openIdx ascending)
+            matchedPairs.sortBy { it.second - it.first }
+
+            for ((openIdx, closeIdx) in matchedPairs) {
+                var maxAsc = 0f
+                var maxDesc = 0f
+
+                for (k in (openIdx + 1) until closeIdx) {
+                    val itemAsc = result[k]?.ascent ?: if (k < baseAscents.size) baseAscents[k] else 0f
+                    val itemDesc = result[k]?.descent ?: if (k < baseDescents.size) baseDescents[k] else 0f
+                    if (itemAsc > maxAsc) maxAsc = itemAsc
+                    if (itemDesc > maxDesc) maxDesc = itemDesc
+                }
+
+                val baseAsc = baseAscents[openIdx]
+                val baseDesc = baseDescents[openIdx]
+                val baseH = baseAsc + baseDesc
+                val enclosedH = maxAsc + maxDesc
+
+                if (enclosedH > baseH * 1.15f || maxAsc > baseAsc * 1.15f || maxDesc > baseDesc * 1.25f) {
+                    val pad = maxOf(2.5f * density, textSize * 0.08f)
+                    val pairAsc = maxOf(baseAsc, maxAsc + pad)
+                    val pairDesc = maxOf(baseDesc, maxDesc + pad)
+                    val totalH = pairAsc + pairDesc
+
+                    val stretchW = if (tokens[openIdx] == "|") {
+                        maxOf(baseWidths[openIdx], textSize * 0.30f)
+                    } else {
+                        (baseWidths[openIdx] + (totalH - baseH) * 0.10f).coerceIn(baseWidths[openIdx], textSize * 0.70f)
+                    }
+
+                    val box = StretchBracketBox(stretchW, pairAsc, pairDesc, isStretched = true)
+                    result[openIdx] = box
+                    result[closeIdx] = box
+                }
+            }
+
+            return result
+        }
     }
 }

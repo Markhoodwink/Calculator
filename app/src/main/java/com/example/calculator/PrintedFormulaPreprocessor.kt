@@ -127,7 +127,13 @@ class PrintedFormulaPreprocessor : FormulaImagePreprocessor {
             }
         }
 
-        if (softAntiMoirePass) {
+        val radius = (minOf(w, h) / 6).coerceIn(10, 28)
+        var bg = separableBoxBlur(luma, w, h, radius)
+        var ratio = FloatArray(totalPixels) { (luma[it] / maxOf(bg[it], 32f)).coerceIn(0f, 1.2f) }
+
+        val (lower, upper, p1) = computePrintedAdaptiveBounds(ratio, softAntiMoirePass)
+
+        if (softAntiMoirePass && p1 <= 0.44f) {
             val gaussianLuma = FloatArray(totalPixels)
             for (y in 0 until h) {
                 val rOff = y * w
@@ -151,13 +157,50 @@ class PrintedFormulaPreprocessor : FormulaImagePreprocessor {
                 }
             }
             System.arraycopy(gaussianLuma, 0, luma, 0, totalPixels)
+            bg = separableBoxBlur(luma, w, h, radius)
+            ratio = FloatArray(totalPixels) { (luma[it] / maxOf(bg[it], 32f)).coerceIn(0f, 1.2f) }
         }
 
-        val radius = (minOf(w, h) / 6).coerceIn(10, 28)
-        val bg = separableBoxBlur(luma, w, h, radius)
+        val outGray = IntArray(totalPixels)
+        for (i in 0 until totalPixels) {
+            val rVal = ratio[i]
+            val outVal = when {
+                rVal >= upper -> 255
+                rVal <= lower -> 0
+                else -> {
+                    if (p1 <= 0.44f) {
+                        (((rVal - lower) / (upper - lower)) * 255f).toInt().coerceIn(0, 255)
+                    } else {
+                        val t = ((rVal - lower) / (upper - lower)).toDouble()
+                        (Math.pow(t, 1.2) * 255.0).toInt().coerceIn(0, 255)
+                    }
+                }
+            }
+            outGray[i] = outVal
+        }
 
-        val upper = if (softAntiMoirePass) 0.84f else 0.87f
-        val lower = 0.52f
+        if (p1 > 0.50f) {
+            val inkFraction = outGray.count { it < 185 }.toFloat() / totalPixels
+            if (inkFraction < 0.045f || softAntiMoirePass) {
+                val reinforced = outGray.clone()
+                for (y in 1 until h - 1) {
+                    val rOff = y * w
+                    for (x in 1 until w - 1) {
+                        val idx = rOff + x
+                        val center = outGray[idx]
+                        val up = outGray[(y - 1) * w + x]
+                        val down = outGray[(y + 1) * w + x]
+                        val left = outGray[rOff + x - 1]
+                        val right = outGray[rOff + x + 1]
+                        val minCross = minOf(up, down, left, right)
+                        val outNew = minOf(center, minCross + 45).coerceIn(0, 255)
+                        reinforced[idx] = outNew
+                    }
+                }
+                System.arraycopy(reinforced, 0, outGray, 0, totalPixels)
+            }
+        }
+
         val outPixels = IntArray(totalPixels)
         val rowInkCount = IntArray(h)
 
@@ -166,12 +209,7 @@ class PrintedFormulaPreprocessor : FormulaImagePreprocessor {
             var rowInk = 0
             for (x in 0 until w) {
                 val idx = rowOff + x
-                val ratio = luma[idx] / maxOf(bg[idx], 32f)
-                val outVal = when {
-                    ratio >= upper -> 255
-                    ratio <= lower -> 0
-                    else -> (((ratio - lower) / (upper - lower)) * 255f).toInt().coerceIn(0, 255)
-                }
+                val outVal = outGray[idx]
                 outPixels[idx] = (0xFF shl 24) or (outVal shl 16) or (outVal shl 8) or outVal
                 if (outVal < 200) {
                     rowInk++
@@ -769,6 +807,48 @@ class PrintedFormulaPreprocessor : FormulaImagePreprocessor {
     }
 
     companion object {
+        fun computePrintedAdaptiveBounds(ratio: FloatArray, softAntiMoirePass: Boolean = false): Triple<Float, Float, Float> {
+            val total = ratio.size
+            if (total == 0) {
+                val upper = if (softAntiMoirePass) 0.84f else 0.87f
+                return Triple(0.52f, upper, 0.0f)
+            }
+
+            val hist = IntArray(100)
+            for (i in 0 until total) {
+                val v = ratio[i].coerceIn(0f, 1f)
+                val bin = (v * 99.99f).toInt().coerceIn(0, 99)
+                hist[bin]++
+            }
+
+            val targetCount = (total * 0.01f).toInt().coerceAtLeast(1)
+            var cum = 0
+            var p1Bin = 0
+            for (b in 0 until 100) {
+                cum += hist[b]
+                if (cum >= targetCount) {
+                    p1Bin = b
+                    break
+                }
+            }
+            val p1 = (p1Bin + 0.5f) / 100f
+
+            if (p1 <= 0.44f) {
+                val upper = if (softAntiMoirePass) 0.84f else 0.87f
+                return Triple(0.52f, upper, p1)
+            } else {
+                val lower: Float
+                val upper: Float
+                if (!softAntiMoirePass) {
+                    lower = (p1 + 0.08f).coerceIn(0.52f, 0.78f)
+                    upper = if (p1 > 0.56f) 0.92f else 0.90f
+                } else {
+                    lower = (p1 + 0.12f).coerceIn(0.56f, 0.82f)
+                    upper = 0.93f
+                }
+                return Triple(lower, upper, p1)
+            }
+        }
         private data class HorizStripSegment(
             val stripIndex: Int,
             val minY: Int,

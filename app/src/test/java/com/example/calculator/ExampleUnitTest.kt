@@ -2,6 +2,7 @@ package com.example.calculator
 
 import org.junit.Test
 import org.junit.Assert.*
+import kotlin.math.pow
 
 class ExampleUnitTest {
     @Test
@@ -721,5 +722,241 @@ class ExampleUnitTest {
         val res4 = engine.isolateVariableFull("log(1/2, x + 1) = log(2, 1/3)", "x")
         assertEquals("x = 2", res4.displayFormula)
         assertTrue("Expected non-empty detailedSteps", res4.detailedSteps.isNotEmpty())
+    }
+
+    @Test
+    fun testQuadraticSurdRecognitionInInequality() {
+        // 1. Inequality test from screenshot
+        val result = InequalitySolverEngine.solve("abs(log((4),((x+1)^2)) - 2) + abs(log((2),(2x+3)) - 1) <= 3")
+        assertNull(result.errorMessage)
+        val ans = result.answerFormula
+        assertTrue("Expected answerFormula to contain (-5 + 3√57)/4, got: $ans", ans.contains("(-5 + 3√57)/4"))
+        assertTrue("Expected answerFormula to contain -1/2, got: $ans", ans.contains("-1/2") || ans.contains("-1 / 2"))
+        assertFalse("Expected answerFormula NOT to contain 4.412, got: $ans", ans.contains("4.412"))
+
+        // 2. Direct formatExactLabel checks
+        val (_, label1) = InequalitySolverEngine.formatExactLabel((-5.0 + kotlin.math.sqrt(513.0)) / 4.0)
+        assertEquals("(-5 + 3√57)/4", label1)
+
+        val (_, label2) = InequalitySolverEngine.formatExactLabel((1.0 + kotlin.math.sqrt(5.0)) / 2.0)
+        assertEquals("(1 + √5)/2", label2)
+
+        val (_, label3) = InequalitySolverEngine.formatExactLabel(2.0 - kotlin.math.sqrt(3.0))
+        assertEquals("2 - √3", label3)
+
+        val (_, label4) = InequalitySolverEngine.formatExactLabel(kotlin.math.sqrt(2.0) / 2.0)
+        assertEquals("√2/2", label4)
+
+        // 3. Transcendental false-positive guard
+        val (_, labelPi) = InequalitySolverEngine.formatExactLabel(Math.PI, hasExpOrLog = false, isPeriodicTrig = false, knownBases = emptySet())
+        assertFalse("Expected formatExactLabel(Math.PI) NOT to contain √, got: $labelPi", labelPi.contains("√"))
+    }
+
+    @Test
+    fun testExponentialInequalityOverflowAndUnderflow() {
+        val result = InequalitySolverEngine.solve("25 * 4^(1/2 - 2/x) - 133 * 10^(-2/x) + 4 * 5^(1 - 4/x) <= 0")
+        assertNull(result.errorMessage)
+        assertEquals("x ∈ (-∞; -1] ∪ [2; +∞)", result.answerFormula)
+        val labels = result.criticalPoints.map { it.label }
+        assertEquals(listOf("-1", "0", "2"), labels)
+    }
+
+    @Test
+    fun testSteepExponentialNearSingularity() {
+        val result = InequalitySolverEngine.solve("2^(1/x) - 4 >= 0")
+        assertNull(result.errorMessage)
+        assertEquals("x ∈ (0; 1/2]", result.answerFormula)
+    }
+
+    @Test
+    fun testHigherOrderRadicalRecognition() {
+        val result = InequalitySolverEngine.solve("(2 * (1/2)^(x + 2) - (1/2) * 2^(x + 2)) * (2 * (log((1/2),(x + 2)))^2 - (1/2) * log((2),(x + 2))) <= 0")
+        assertNull(result.errorMessage)
+        assertEquals("x ∈ {-1} ∪ [⁴√2 - 2; +∞)", result.answerFormula)
+        assertFalse(result.answerFormula.contains("-0.8107"))
+
+        val (_, label1) = InequalitySolverEngine.formatExactLabel(2.0.pow(0.25) - 2.0)
+        assertEquals("⁴√2 - 2", label1)
+
+        val (_, label2) = InequalitySolverEngine.formatExactLabel(3.0.pow(1.0 / 3.0) + 1.0)
+        assertEquals("³√3 + 1", label2)
+
+        val (_, label3) = InequalitySolverEngine.formatExactLabel(2.0 - 5.0.pow(1.0 / 3.0))
+        assertEquals("2 - ³√5", label3)
+
+        val (_, labelPi) = InequalitySolverEngine.formatExactLabel(Math.PI, hasExpOrLog = false, isPeriodicTrig = false, knownBases = emptySet())
+        assertFalse(labelPi.contains("√"))
+    }
+
+    @Test
+    fun testSinSquareInequality() {
+        val casEngine = CasEngine()
+        val result1 = InequalitySolverEngine.solve("(sin(x))^(2)+2*sin(x) ≤ 0", casEngine)
+        assertNull("Expected no error for (sin(x))^(2)+2*sin(x) ≤ 0, got: ${result1.errorMessage}", result1.errorMessage)
+        assertTrue("Expected isPeriodic = true", result1.isPeriodic)
+        assertTrue("Expected answer to contain [π + 2πk; 2π + 2πk], got: ${result1.answerFormula}", result1.answerFormula.contains("[π + 2πk; 2π + 2πk]"))
+
+        val result2 = InequalitySolverEngine.solve("(sin(x))^2 + 2*sin(x) <= 0", casEngine)
+        assertNull("Expected no error for (sin(x))^2 + 2*sin(x) <= 0, got: ${result2.errorMessage}", result2.errorMessage)
+        assertTrue("Expected isPeriodic = true", result2.isPeriodic)
+        assertTrue("Expected answer to contain [π + 2πk; 2π + 2πk], got: ${result2.answerFormula}", result2.answerFormula.contains("[π + 2πk; 2π + 2πk]"))
+    }
+
+    @Test
+    fun testMixedNonPeriodicTrigEquation() {
+        val casEngine = CasEngine()
+        val result = TrigSolverEngine.solve("log((2),(x))+ln(x^2)-sin(2x)+(tan(x))/(sin(x))=0", casEngine = casEngine)
+        assertTrue("Expected generalSolutions to be empty for non-periodic mixed equation", result.generalSolutions.isEmpty())
+        assertNotNull("Expected non-null errorMessage for non-periodic mixed equation", result.errorMessage)
+        assertTrue(
+            "Expected errorMessage to mention non-periodic equation, got: ${result.errorMessage}",
+            result.errorMessage!!.contains("не является чисто тригонометрическим")
+        )
+    }
+
+    @Test
+    fun testGeneralModulusEquations() {
+        val engine = CasEngine()
+
+        // 1. |2x - 1| = 5 -> roots -2 and 3
+        val res1 = engine.isolateVariableFull("|2x - 1| = 5", "x")
+        assertTrue("Expected -2 and 3 in '${res1.displayFormula}'", res1.displayFormula.contains("-2") && res1.displayFormula.contains("3"))
+
+        // 2. |2x - 1| = x + 3 -> roots -2/3 and 4
+        val res2 = engine.isolateVariableFull("|2x - 1| = x + 3", "x")
+        assertTrue("Expected -2/3 and 4 in '${res2.displayFormula}'", (res2.displayFormula.contains("-2/3") || res2.displayFormula.contains("-0.66")) && res2.displayFormula.contains("4"))
+
+        // 3. |2x - 1| = x - 5 -> "Нет действительных корней" (extraneous roots rejected!)
+        val res3 = engine.isolateVariableFull("|2x - 1| = x - 5", "x")
+        assertEquals("Нет действительных корней", res3.displayFormula)
+
+        // 4. |2x - 3| = |x + 1| -> roots 2/3 and 4
+        val res4 = engine.isolateVariableFull("|2x - 3| = |x + 1|", "x")
+        assertTrue("Expected 2/3 and 4 in '${res4.displayFormula}'", (res4.displayFormula.contains("2/3") || res4.displayFormula.contains("0.66")) && res4.displayFormula.contains("4"))
+
+        // 5. |x - 2| + |x + 3| = 7 -> roots -4 and 3
+        val res5 = engine.isolateVariableFull("|x - 2| + |x + 3| = 7", "x")
+        assertTrue("Expected -4 and 3 in '${res5.displayFormula}'", res5.displayFormula.contains("-4") && res5.displayFormula.contains("3"))
+
+        // 6. x^2 - 5|x| + 6 = 0 -> roots -3, -2, 2, 3
+        val res6 = engine.isolateVariableFull("x^2 - 5|x| + 6 = 0", "x")
+        assertTrue("Expected -3, -2, 2, 3 in '${res6.displayFormula}'", res6.displayFormula.contains("-3") && res6.displayFormula.contains("-2") && res6.displayFormula.contains("2") && res6.displayFormula.contains("3"))
+
+        // 7. |x - 1| + |x - 5| = 4 -> interval x ∈ [1; 5]
+        val res7 = engine.isolateVariableFull("|x - 1| + |x - 5| = 4", "x")
+        assertTrue("Expected interval [1; 5] in '${res7.displayFormula}'", res7.displayFormula.contains("[1; 5]"))
+
+        // 8. ||x| - 2| = 1 -> roots -3, -1, 1, 3
+        val res8 = engine.isolateVariableFull("||x| - 2| = 1", "x")
+        assertTrue("Expected -3, -1, 1, 3 in '${res8.displayFormula}'", res8.displayFormula.contains("-3") && res8.displayFormula.contains("-1") && res8.displayFormula.contains("1") && res8.displayFormula.contains("3"))
+    }
+
+    @Test
+    fun testUpdateCheckerVersions() {
+        // compareVersions: "2.1" > "2.0", "2.0.1" > "2.0", "2.10" > "2.2", "2.0" == "v2.0", "1.9" < "2.0".
+        assertTrue(UpdateChecker.compareVersions("2.1", "2.0") > 0)
+        assertTrue(UpdateChecker.compareVersions("2.0.1", "2.0") > 0)
+        assertTrue(UpdateChecker.compareVersions("2.10", "2.2") > 0)
+        assertEquals(0, UpdateChecker.compareVersions("2.0", "v2.0"))
+        assertTrue(UpdateChecker.compareVersions("1.9", "2.0") < 0)
+    }
+
+    @Test
+    fun testUpdateCheckerParseRelease() {
+        val mockJson = """
+        [
+            {
+                "tag_name": "ocr-models-v1",
+                "draft": false,
+                "prerelease": false,
+                "html_url": "https://github.com/Markhoodwink/Calculator/releases/tag/ocr-models-v1",
+                "body": "OCR models data"
+            },
+            {
+                "tag_name": "v2.1",
+                "draft": false,
+                "prerelease": false,
+                "html_url": "https://github.com/Markhoodwink/Calculator/releases/tag/v2.1",
+                "body": "### New Features\n* Support for modulus equations",
+                "assets": [
+                    {
+                        "name": "MB-CAL-v2.1.apk",
+                        "browser_download_url": "https://github.com/Markhoodwink/Calculator/releases/download/v2.1/MB-CAL-v2.1.apk"
+                    }
+                ]
+            }
+        ]
+        """.trimIndent()
+
+        // When current version is 2.0, should parse v2.1
+        val update = UpdateChecker.parseLatestAppRelease(mockJson, "2.0")
+        assertNotNull(update)
+        assertEquals("v2.1", update!!.tagName)
+        assertEquals("2.1", update.versionName)
+        assertEquals("https://github.com/Markhoodwink/Calculator/releases/download/v2.1/MB-CAL-v2.1.apk", update.downloadUrl)
+        assertTrue(update.releaseNotes.contains("Support for modulus equations"))
+        assertFalse(update.releaseNotes.contains("#"))
+
+        // When current version is 2.1, no update returned
+        val noUpdate = UpdateChecker.parseLatestAppRelease(mockJson, "2.1")
+        assertNull(noUpdate)
+    }
+
+    @Test
+    fun testAdaptiveBracketScaling() {
+        val textSize = 20f
+        val density = 2f
+
+        // 1. Flat expression (x + 1) -> isStretched is null
+        val flatTokens = listOf("(", "x", "+", "1", ")")
+        val flatWidths = floatArrayOf(10f, 12f, 14f, 12f, 10f)
+        val flatAscents = floatArrayOf(18f, 16f, 16f, 16f, 18f)
+        val flatDescents = floatArrayOf(5f, 4f, 4f, 4f, 5f)
+        val flatBoxes = CasioDisplayView.computeAdaptiveBracketBoxes(
+            flatTokens, flatWidths, flatAscents, flatDescents, textSize, density
+        )
+        assertNull(flatBoxes[0])
+        assertNull(flatBoxes[4])
+
+        // 2. Nested expression L(1 - (1 - 4√(1 - L_1/L))^2)
+        // Tokens: outer '(', 'L', '-', inner '(', '1', '-', tall sqrt item, ')', '^2', ')'
+        val nestedTokens = listOf("(", "L", "-", "(", "1", "-", null, ")", "^2", ")")
+        val nWidths = floatArrayOf(10f, 12f, 14f, 10f, 12f, 14f, 50f, 10f, 15f, 10f)
+        val nAscents = floatArrayOf(18f, 16f, 16f, 18f, 16f, 16f, 44f, 18f, 20f, 18f)
+        val nDescents = floatArrayOf(5f, 4f, 4f, 5f, 4f, 4f, 30f, 5f, 0f, 5f)
+        val nestedBoxes = CasioDisplayView.computeAdaptiveBracketBoxes(
+            nestedTokens, nWidths, nAscents, nDescents, textSize, density
+        )
+
+        val innerOpen = nestedBoxes[3]
+        val innerClose = nestedBoxes[7]
+        assertNotNull(innerOpen)
+        assertNotNull(innerClose)
+        assertTrue(innerOpen!!.isStretched)
+        assertTrue(innerOpen.ascent > 44f)
+        assertTrue(innerOpen.descent > 30f)
+
+        val outerOpen = nestedBoxes[0]
+        val outerClose = nestedBoxes[9]
+        assertNotNull(outerOpen)
+        assertNotNull(outerClose)
+        assertTrue(outerOpen!!.isStretched)
+        assertTrue(outerOpen.ascent > innerOpen.ascent)
+        assertTrue(outerOpen.descent > innerOpen.descent)
+
+        // 3. Modulus wrapping a fraction |x/2|
+        val modTokens = listOf("|", null, "|")
+        val modWidths = floatArrayOf(6f, 30f, 6f)
+        val modAscents = floatArrayOf(18f, 35f, 18f)
+        val modDescents = floatArrayOf(5f, 25f, 5f)
+        val modBoxes = CasioDisplayView.computeAdaptiveBracketBoxes(
+            modTokens, modWidths, modAscents, modDescents, textSize, density
+        )
+        assertNotNull(modBoxes[0])
+        assertNotNull(modBoxes[2])
+        assertTrue(modBoxes[0]!!.isStretched)
+        assertTrue(modBoxes[2]!!.isStretched)
+        assertEquals(modBoxes[0]!!.ascent, modBoxes[2]!!.ascent, 0.001f)
+        assertEquals(modBoxes[0]!!.descent, modBoxes[2]!!.descent, 0.001f)
     }
 }

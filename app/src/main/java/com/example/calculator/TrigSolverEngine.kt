@@ -105,6 +105,11 @@ object TrigSolverEngine {
 
             steps.add("Приведение к виду f(x) = 0: ${diffAst.toExprString()} = 0")
 
+            if (hasNonTrigVariable(diffAst, "x")) {
+                val nonTrigError = "Уравнение не является чисто тригонометрическим (переменная x входит вне тригонометрических функций, например в log/ln). Периодическое решение вида + 2πk невозможно — используйте режим «Уравнение» или «График»."
+                return TrigSolveResult(emptyList(), emptyList(), steps, deduplicateTrigSteps(detailedSteps), nonTrigError)
+            }
+
             // ОДЗ
             detectAndAddOdzSteps(trimmed, leftAst, rightAst, detailedSteps)
 
@@ -113,6 +118,9 @@ object TrigSolverEngine {
             if (generalSeries.isEmpty()) {
                 generalSeries = solveByPeriodAnalysis(leftAst, rightAst, casEngine, steps, detailedSteps)
             }
+
+            // Mandatory Substitution Verification Guard for ALL General Solutions
+            generalSeries = filterAndValidateSeries(generalSeries, diffAst, casEngine)
 
             if (generalSeries.isEmpty()) {
                 return TrigSolveResult(emptyList(), emptyList(), steps, deduplicateTrigSteps(detailedSteps), "Нет действительных корней")
@@ -2287,5 +2295,126 @@ object TrigSolverEngine {
     private fun mulPolyNodes(a: Node, b: Node): Node {
         if (a is Node.Num && b is Node.Num) return Node.Num(a.value * b.value)
         return Node.Mul(a, b)
+    }
+
+    fun hasNonTrigVariable(node: Node, varName: String = "x", insideTrig: Boolean = false): Boolean {
+        return when (node) {
+            is Node.Num, is Node.Approx -> false
+            is Node.Variable -> {
+                if (node.name.equals(varName, ignoreCase = true)) {
+                    !insideTrig
+                } else false
+            }
+            is Node.Func -> {
+                val fn = node.fn.lowercase()
+                if (fn in setOf("sin", "cos", "tan", "tg", "cot", "ctg", "asin", "acos", "atan")) {
+                    hasNonTrigVariable(node.arg, varName, insideTrig = true)
+                } else {
+                    node.containsVar(varName)
+                }
+            }
+            is Node.Add -> hasNonTrigVariable(node.l, varName, insideTrig) || hasNonTrigVariable(node.r, varName, insideTrig)
+            is Node.Sub -> hasNonTrigVariable(node.l, varName, insideTrig) || hasNonTrigVariable(node.r, varName, insideTrig)
+            is Node.Mul -> hasNonTrigVariable(node.l, varName, insideTrig) || hasNonTrigVariable(node.r, varName, insideTrig)
+            is Node.Div -> hasNonTrigVariable(node.l, varName, insideTrig) || hasNonTrigVariable(node.r, varName, insideTrig)
+            is Node.Pow -> {
+                if (node.exp.containsVar(varName)) true
+                else hasNonTrigVariable(node.base, varName, insideTrig)
+            }
+            is Node.Sqrt -> node.inner.containsVar(varName)
+            is Node.LogBase -> node.base.containsVar(varName) || node.arg.containsVar(varName)
+            is Node.Comb -> node.n.containsVar(varName) || node.k.containsVar(varName)
+        }
+    }
+
+    private fun checkOdzAndEval(node: Node, x: Double, casEngine: CasEngine): Double? {
+        if (x.isNaN() || x.isInfinite()) return null
+        fun check(n: Node): Boolean {
+            when (n) {
+                is Node.Div -> {
+                    val denVal = casEngine.evalNodeAtX(n.r, x)
+                    if (denVal.isNaN() || abs(denVal) < 1e-9) return false
+                    return check(n.l) && check(n.r)
+                }
+                is Node.Sqrt -> {
+                    val innerVal = casEngine.evalNodeAtX(n.inner, x)
+                    if (innerVal.isNaN() || innerVal < -1e-9) return false
+                    return check(n.inner)
+                }
+                is Node.LogBase -> {
+                    val bVal = casEngine.evalNodeAtX(n.base, x)
+                    val aVal = casEngine.evalNodeAtX(n.arg, x)
+                    if (bVal.isNaN() || bVal <= 1e-9 || abs(bVal - 1.0) < 1e-9) return false
+                    if (aVal.isNaN() || aVal <= 1e-9) return false
+                    return check(n.base) && check(n.arg)
+                }
+                is Node.Func -> {
+                    val fn = n.fn.lowercase()
+                    if (fn == "ln" || fn == "log" || fn == "lg") {
+                        val aVal = casEngine.evalNodeAtX(n.arg, x)
+                        if (aVal.isNaN() || aVal <= 1e-9) return false
+                    } else if (fn == "tan" || fn == "tg") {
+                        val aVal = casEngine.evalNodeAtX(n.arg, x)
+                        if (aVal.isNaN() || abs(cos(aVal)) < 1e-9) return false
+                    } else if (fn == "cot" || fn == "ctg") {
+                        val aVal = casEngine.evalNodeAtX(n.arg, x)
+                        if (aVal.isNaN() || abs(sin(aVal)) < 1e-9) return false
+                    }
+                    return check(n.arg)
+                }
+                is Node.Add -> return check(n.l) && check(n.r)
+                is Node.Sub -> return check(n.l) && check(n.r)
+                is Node.Mul -> return check(n.l) && check(n.r)
+                is Node.Pow -> return check(n.base) && check(n.exp)
+                else -> return true
+            }
+        }
+
+        if (!check(node)) return null
+        val valRes = casEngine.evalNodeAtX(node, x)
+        if (valRes.isNaN() || valRes.isInfinite()) return null
+        return valRes
+    }
+
+    private fun verifySingleSeries(
+        singleSeries: SingleSeries,
+        origEq: Node,
+        casEngine: CasEngine
+    ): Boolean {
+        val alpha = singleSeries.baseAngleRad
+        val period = if (abs(singleSeries.periodRad) > 1e-9) singleSeries.periodRad else 2 * Math.PI
+
+        val shifts = listOf(0, 1, 2)
+        var validCount = 0
+
+        for (k in shifts) {
+            val testX = alpha + k * period
+            val valEq = checkOdzAndEval(origEq, testX, casEngine) ?: return false
+            if (abs(valEq) > 1e-4) return false
+            validCount++
+        }
+        return validCount >= 2
+    }
+
+    private fun filterAndValidateSeries(
+        seriesList: List<TrigRootSeries>,
+        origEq: Node,
+        casEngine: CasEngine
+    ): List<TrigRootSeries> {
+        val validRootSeries = mutableListOf<TrigRootSeries>()
+        for (rootSeries in seriesList) {
+            val validSingles = rootSeries.seriesList.filter { single ->
+                verifySingleSeries(single, origEq, casEngine)
+            }
+            if (validSingles.isNotEmpty()) {
+                if (validSingles.size == rootSeries.seriesList.size) {
+                    validRootSeries.add(rootSeries)
+                } else {
+                    val newDisplay = formatSeriesList(validSingles)
+                    validRootSeries.add(TrigRootSeries(newDisplay, validSingles))
+                }
+            }
+        }
+        return validRootSeries
     }
 }

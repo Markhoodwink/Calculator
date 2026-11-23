@@ -327,7 +327,7 @@ class CasEngine {
             override fun containsVar(name: String) = base.containsVar(name) || exp.containsVar(name)
             override fun precedence() = 3
             override fun toExprString(): String {
-                val bStr = if (base.precedence() < 3) "(${base.toExprString()})" else base.toExprString()
+                val bStr = if (base.precedence() < 3 || base is LogBase) "(${base.toExprString()})" else base.toExprString()
                 val wrapExp = exp.precedence() < 3 || (exp is Num && (exp.value.den != 1L || exp.value.num < 0L))
                 val eStr = if (wrapExp) "(${exp.toExprString()})" else exp.toExprString()
                 return "$bStr^$eStr"
@@ -1282,12 +1282,48 @@ class CasEngine {
         private val src = preprocess(input)
         private var pos = 0
 
+        private fun transformAbsBars(raw: String): String {
+            if (!raw.contains("|")) return raw
+            val sb = StringBuilder()
+            var openAbsDepth = 0
+            val opSet = setOf('(', '+', '-', '*', '/', '^', '=', ',', '<', '>', '≤', '≥')
+            var i = 0
+            while (i < raw.length) {
+                val c = raw[i]
+                if (c == '|') {
+                    val prevChar = sb.trimEnd().lastOrNull()
+                    val isOpen = openAbsDepth == 0 || (prevChar == null || prevChar in opSet)
+                    if (isOpen) {
+                        val needsMul = prevChar != null && prevChar !in opSet
+                        if (needsMul) {
+                            sb.append("*abs(")
+                        } else {
+                            sb.append("abs(")
+                        }
+                        openAbsDepth++
+                    } else {
+                        sb.append(")")
+                        openAbsDepth--
+                    }
+                } else {
+                    sb.append(c)
+                }
+                i++
+            }
+            while (openAbsDepth > 0) {
+                sb.append(")")
+                openAbsDepth--
+            }
+            return sb.toString()
+        }
+
         private fun preprocess(raw: String): String {
+            val rawTransformed = transformAbsBars(raw)
             val cleanAns = if (ansVal.isBlank()) "0" else {
                 val part = if (ansVal.contains("=")) ansVal.substringAfter("=").trim() else ansVal.trim()
                 if (part.isBlank()) "0" else part
             }
-            val withAns = raw
+            val withAns = rawTransformed
                 .replace("Ans", "($cleanAns)")
                 .replace("ans", "($cleanAns)")
                 .replace("ANS", "($cleanAns)")
@@ -3447,7 +3483,339 @@ class CasEngine {
         return null
     }
 
-    fun isolateVariableFull(equation: String, targetVar: String = "x"): SolveResult {
+    private fun hasAbsWithVar(node: Node, target: String): Boolean {
+        return when (node) {
+            is Node.Func -> (node.fn == "abs" && node.arg.containsVar(target)) || hasAbsWithVar(node.arg, target)
+            is Node.Add -> hasAbsWithVar(node.l, target) || hasAbsWithVar(node.r, target)
+            is Node.Sub -> hasAbsWithVar(node.l, target) || hasAbsWithVar(node.r, target)
+            is Node.Mul -> hasAbsWithVar(node.l, target) || hasAbsWithVar(node.r, target)
+            is Node.Div -> hasAbsWithVar(node.l, target) || hasAbsWithVar(node.r, target)
+            is Node.Pow -> hasAbsWithVar(node.base, target) || hasAbsWithVar(node.exp, target)
+            else -> false
+        }
+    }
+
+    private fun collectAbsInners(node: Node, target: String, list: MutableList<Node>) {
+        when (node) {
+            is Node.Func -> {
+                if (node.fn == "abs" && node.arg.containsVar(target)) {
+                    val exprStr = node.arg.toExprString()
+                    if (list.none { it.toExprString() == exprStr }) {
+                        list.add(node.arg)
+                    }
+                }
+                collectAbsInners(node.arg, target, list)
+            }
+            is Node.Add -> { collectAbsInners(node.l, target, list); collectAbsInners(node.r, target, list) }
+            is Node.Sub -> { collectAbsInners(node.l, target, list); collectAbsInners(node.r, target, list) }
+            is Node.Mul -> { collectAbsInners(node.l, target, list); collectAbsInners(node.r, target, list) }
+            is Node.Div -> { collectAbsInners(node.l, target, list); collectAbsInners(node.r, target, list) }
+            is Node.Pow -> { collectAbsInners(node.base, target, list); collectAbsInners(node.exp, target, list) }
+            else -> {}
+        }
+    }
+
+    private fun replaceAbsWithSigns(node: Node, signMap: Map<String, Int>): Node {
+        return when (node) {
+            is Node.Func -> {
+                if (node.fn == "abs") {
+                    val innerStr = node.arg.toExprString()
+                    val sign = signMap[innerStr]
+                    if (sign != null) {
+                        val newInner = replaceAbsWithSigns(node.arg, signMap)
+                        if (sign >= 0) {
+                            newInner
+                        } else {
+                            Node.Mul(Node.Num(Fraction(-1)), newInner)
+                        }
+                    } else {
+                        Node.Func("abs", replaceAbsWithSigns(node.arg, signMap))
+                    }
+                } else {
+                    Node.Func(node.fn, replaceAbsWithSigns(node.arg, signMap))
+                }
+            }
+            is Node.Add -> Node.Add(replaceAbsWithSigns(node.l, signMap), replaceAbsWithSigns(node.r, signMap))
+            is Node.Sub -> Node.Sub(replaceAbsWithSigns(node.l, signMap), replaceAbsWithSigns(node.r, signMap))
+            is Node.Mul -> Node.Mul(replaceAbsWithSigns(node.l, signMap), replaceAbsWithSigns(node.r, signMap))
+            is Node.Div -> Node.Div(replaceAbsWithSigns(node.l, signMap), replaceAbsWithSigns(node.r, signMap))
+            is Node.Pow -> Node.Pow(replaceAbsWithSigns(node.base, signMap), replaceAbsWithSigns(node.exp, signMap))
+            else -> node
+        }
+    }
+
+    private fun parseNumbersAfterEquals(text: String): List<Double> {
+        val results = mutableListOf<Double>()
+        val parts = text.split(";", "\n")
+        for (part in parts) {
+            val afterEq = if (part.contains("=")) part.substringAfter("=").trim() else part.trim()
+            val match = Regex("""-?\d+(?:\.\d+)?(?:/-?\d+)?""").find(afterEq)
+            if (match != null) {
+                val str = match.value
+                if (str.contains("/")) {
+                    val n = str.substringBefore("/").toDoubleOrNull()
+                    val d = str.substringAfter("/").toDoubleOrNull()
+                    if (n != null && d != null && d != 0.0) results.add(n / d)
+                } else {
+                    str.toDoubleOrNull()?.let { results.add(it) }
+                }
+            }
+        }
+        return results
+    }
+
+    private fun extractRootsFromSolveResult(res: SolveResult, target: String): List<Double> {
+        val list = mutableListOf<Double>()
+        if (res.primaryNode != null) {
+            val v = evalNodeAtX(res.primaryNode, 0.0)
+            if (!v.isNaN() && !v.isInfinite()) list.add(v)
+        }
+        list.addAll(parseNumbersAfterEquals(res.displayFormula))
+        for (step in res.detailedSteps) {
+            if (step.badge == "Ответ" || step.title.contains("Ответ") || step.title.contains("Корень")) {
+                list.addAll(parseNumbersAfterEquals(step.formula))
+            }
+        }
+        return list.distinctBy { (it * 1e6).toLong() }
+    }
+
+    private fun verifyRootOnOriginal(
+        rVal: Double,
+        origLeft: Node,
+        origRight: Node,
+        target: String
+    ): Boolean {
+        if (rVal.isNaN() || rVal.isInfinite()) return false
+        val lVal = evalNodeAtVar(origLeft, target, rVal)
+        val rValEval = evalNodeAtVar(origRight, target, rVal)
+        if (lVal.isNaN() || rValEval.isNaN() || lVal.isInfinite() || rValEval.isInfinite()) return false
+        return abs(lVal - rValEval) < 1e-5
+    }
+
+    private fun formatIntervalLabel(low: Double, high: Double): String {
+        val lowStr = if (low == -Double.MAX_VALUE) "(-∞" else "[${formatRoot(low)}"
+        val highStr = if (high == Double.MAX_VALUE) "+∞)" else "${formatRoot(high)}]"
+        return "$lowStr; $highStr"
+    }
+
+    private fun mergeIntervals(intervals: List<Pair<Double, Double>>): List<Pair<Double, Double>> {
+        if (intervals.isEmpty()) return emptyList()
+        val sorted = intervals.sortedBy { it.first }
+        val result = mutableListOf<Pair<Double, Double>>()
+        var cur = sorted[0]
+        for (i in 1 until sorted.size) {
+            val next = sorted[i]
+            if (next.first <= cur.second + 1e-7) {
+                cur = Pair(cur.first, maxOf(cur.second, next.second))
+            } else {
+                result.add(cur)
+                cur = next
+            }
+        }
+        result.add(cur)
+        return result
+    }
+
+    private fun trySolveModulusEquation(
+        origLeft: Node,
+        origRight: Node,
+        target: String,
+        detailedSteps: MutableList<CasStep>,
+        depth: Int = 0
+    ): SolveResult? {
+        if (origLeft is Node.Func && origLeft.fn == "abs" && !origRight.containsVar(target)) {
+            val rVal = evalNodeAtX(origRight, 0.0)
+            if (rVal < -1e-9) {
+                detailedSteps.add(CasStep("Шаг 1", "Анализируем модуль", "${formatReadableExpr(origLeft.toExprString())} = ${formatReadableExpr(origRight.toExprString())} < 0", "Модуль числа не может быть отрицательным."))
+                detailedSteps.add(CasStep("Ответ", "Записываем ответ", "Нет действительных корней", "Уравнение не имеет решений."))
+                return SolveResult("Нет действительных корней", null, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
+            }
+            if (abs(rVal) <= 1e-9) {
+                return isolateVariableFull("${origLeft.arg.toExprString()} = 0", target, depth + 1)
+            }
+            detailedSteps.add(CasStep("Шаг 1", "Раскрываем модуль со знаками плюс и минус", "${formatReadableExpr(origLeft.toExprString())} = ${formatReadableExpr(origRight.toExprString())}", "Уравнение вида |f(x)| = c (где c > 0) равносильно совокупности f(x) = c или f(x) = -c."))
+            val eq1 = "${origLeft.arg.toExprString()} = ${origRight.toExprString()}"
+            val eq2 = "${origLeft.arg.toExprString()} = -(${origRight.toExprString()})"
+            val res1 = isolateVariableFull(eq1, target, depth + 1)
+            val res2 = isolateVariableFull(eq2, target, depth + 1)
+
+            val candidateRoots = mutableListOf<Double>()
+            candidateRoots.addAll(extractRootsFromSolveResult(res1, target))
+            candidateRoots.addAll(extractRootsFromSolveResult(res2, target))
+
+            val validRoots = candidateRoots.filter { verifyRootOnOriginal(it, origLeft, origRight, target) }
+                .distinctBy { (it * 1e6).toLong() }
+                .sorted()
+
+            if (validRoots.isNotEmpty()) {
+                val displayStr = formatRootsDisplay(validRoots, target)
+                detailedSteps.add(CasStep("Ответ", "Записываем ответ", displayStr, "Корни, удовлетворяющие исходному уравнению."))
+                return SolveResult(displayStr, null, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
+            } else {
+                detailedSteps.add(CasStep("Ответ", "Записываем ответ", "Нет действительных корней", "Уравнение не имеет решений."))
+                return SolveResult("Нет действительных корней", null, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
+            }
+        }
+
+        val absInnersList = mutableListOf<Node>()
+        collectAbsInners(origLeft, target, absInnersList)
+        collectAbsInners(origRight, target, absInnersList)
+        val absInners = absInnersList.distinctBy { it.toExprString() }
+
+        if (absInners.isEmpty() || absInners.size > 4) return null
+
+        if (absInners.size == 1) {
+            val u = absInners[0]
+            val uExpr = u.toExprString()
+
+            val left1 = replaceAbsWithSigns(origLeft, mapOf(uExpr to 1))
+            val right1 = replaceAbsWithSigns(origRight, mapOf(uExpr to 1))
+            val eq1Str = "${left1.toExprString()} = ${right1.toExprString()}"
+
+            val left2 = replaceAbsWithSigns(origLeft, mapOf(uExpr to -1))
+            val right2 = replaceAbsWithSigns(origRight, mapOf(uExpr to -1))
+            val eq2Str = "${left2.toExprString()} = ${right2.toExprString()}"
+
+            detailedSteps.add(
+                CasStep(
+                    "Шаг 1",
+                    "Раскрываем модуль |${formatReadableExpr(uExpr)}|",
+                    "${formatReadableExpr(origLeft.toExprString())} = ${formatReadableExpr(origRight.toExprString())}",
+                    "Рассматриваем два случая:\n1) При ${formatReadableExpr(uExpr)} ≥ 0: ${formatReadableExpr(left1.toExprString())} = ${formatReadableExpr(right1.toExprString())}\n2) При ${formatReadableExpr(uExpr)} < 0: ${formatReadableExpr(left2.toExprString())} = ${formatReadableExpr(right2.toExprString())}"
+                )
+            )
+
+            val res1 = isolateVariableFull(eq1Str, target, depth + 1)
+            val res2 = isolateVariableFull(eq2Str, target, depth + 1)
+
+            val candidateRoots = mutableListOf<Double>()
+            candidateRoots.addAll(extractRootsFromSolveResult(res1, target))
+            candidateRoots.addAll(extractRootsFromSolveResult(res2, target))
+
+            val validRoots = candidateRoots.filter { verifyRootOnOriginal(it, origLeft, origRight, target) }
+                .distinctBy { (it * 1e6).toLong() }
+                .sorted()
+
+            if (validRoots.isNotEmpty()) {
+                val displayStr = formatRootsDisplay(validRoots, target)
+                detailedSteps.add(CasStep("Ответ", "Записываем ответ", displayStr, "Корни, удовлетворяющие исходному уравнению."))
+                return SolveResult(displayStr, null, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
+            } else {
+                detailedSteps.add(CasStep("Ответ", "Записываем ответ", "Нет действительных корней", "Уравнение не имеет решений."))
+                return SolveResult("Нет действительных корней", null, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
+            }
+        }
+
+        val zeros = mutableListOf<Double>()
+        for (u in absInners) {
+            val res = isolateVariableFull("${u.toExprString()} = 0", target, depth + 1)
+            val rList = extractRootsFromSolveResult(res, target)
+            zeros.addAll(rList)
+        }
+        val sortedZeros = zeros.filter { !it.isNaN() && !it.isInfinite() }
+            .distinctBy { (it * 1e6).toLong() }
+            .sorted()
+
+        val zerosStr = sortedZeros.mapIndexed { i, v -> "$target${listOf("₁","₂","₃","₄").getOrElse(i) { "${i+1}" }} = ${formatRoot(v)}" }.joinToString(", ")
+        detailedSteps.add(
+            CasStep(
+                "Шаг 1",
+                "Нули подмодульных выражений",
+                if (zerosStr.isNotBlank()) zerosStr else "Нет нулей",
+                "Находим точки, в которых выражения под знаком модуля меняют знак."
+            )
+        )
+
+        val points = listOf(-Double.MAX_VALUE) + sortedZeros + listOf(Double.MAX_VALUE)
+        val intervalSolutions = mutableListOf<Pair<Double, Double>>()
+        val validDiscreteRoots = mutableListOf<Double>()
+
+        for (idx in 0 until points.size - 1) {
+            val low = points[idx]
+            val high = points[idx + 1]
+
+            val mid = when {
+                low == -Double.MAX_VALUE -> high - 1.0
+                high == Double.MAX_VALUE -> low + 1.0
+                else -> (low + high) / 2.0
+            }
+
+            val signMap = mutableMapOf<String, Int>()
+            for (u in absInners) {
+                val uVal = evalNodeAtVar(u, target, mid)
+                signMap[u.toExprString()] = if (uVal >= 0.0) 1 else -1
+            }
+
+            val leftB = replaceAbsWithSigns(origLeft, signMap)
+            val rightB = replaceAbsWithSigns(origRight, signMap)
+            val diffB = simplify(Node.Sub(leftB, rightB))
+
+            val intervalLabel = formatIntervalLabel(low, high)
+
+            if (isZero(diffB) || diffB.toExprString() == "0") {
+                intervalSolutions.add(Pair(low, high))
+                detailedSteps.add(
+                    CasStep(
+                        "Интервал $intervalLabel",
+                        "Раскрытие модуля на интервале $intervalLabel",
+                        "${formatReadableExpr(leftB.toExprString())} = ${formatReadableExpr(rightB.toExprString())}  ⇒  0 = 0",
+                        "На этом интервале уравнение превращается в тождество. Все точки интервала являются решениями."
+                    )
+                )
+            } else {
+                val eqStr = "${leftB.toExprString()} = ${rightB.toExprString()}"
+                val resB = isolateVariableFull(eqStr, target, depth + 1)
+                val rList = extractRootsFromSolveResult(resB, target)
+                var foundOnInterval = false
+                for (r in rList) {
+                    val inInterval = r >= (low - 1e-7) && r <= (high + 1e-7)
+                    if (inInterval && verifyRootOnOriginal(r, origLeft, origRight, target)) {
+                        validDiscreteRoots.add(r)
+                        foundOnInterval = true
+                    }
+                }
+                detailedSteps.add(
+                    CasStep(
+                        "Интервал $intervalLabel",
+                        "Раскрытие модуля на интервале $intervalLabel",
+                        "${formatReadableExpr(leftB.toExprString())} = ${formatReadableExpr(rightB.toExprString())}",
+                        if (foundOnInterval) "Найден корень на интервале $intervalLabel." else "Корней на интервале $intervalLabel нет."
+                    )
+                )
+            }
+        }
+
+        for (z in sortedZeros) {
+            if (verifyRootOnOriginal(z, origLeft, origRight, target)) {
+                val insideInterval = intervalSolutions.any { (lo, hi) -> z >= (lo - 1e-7) && z <= (hi + 1e-7) }
+                if (!insideInterval) {
+                    validDiscreteRoots.add(z)
+                }
+            }
+        }
+
+        val mergedIntervals = mergeIntervals(intervalSolutions)
+        val sortedDiscrete = validDiscreteRoots.distinctBy { (it * 1e6).toLong() }.sorted()
+
+        val finalDisplay = when {
+            mergedIntervals.isNotEmpty() -> {
+                val intStr = mergedIntervals.joinToString(" ∪ ") { (lo, hi) -> formatIntervalLabel(lo, hi) }
+                if (sortedDiscrete.isNotEmpty()) {
+                    val discStr = formatRootsDisplay(sortedDiscrete, target)
+                    "$target ∈ $intStr;  $discStr"
+                } else {
+                    "$target ∈ $intStr"
+                }
+            }
+            sortedDiscrete.isNotEmpty() -> formatRootsDisplay(sortedDiscrete, target)
+            else -> "Нет действительных корней"
+        }
+
+        detailedSteps.add(CasStep("Ответ", "Записываем ответ", finalDisplay, "Записываем решение уравнения с модулями."))
+        return SolveResult(finalDisplay, null, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
+    }
+
+    fun isolateVariableFull(equation: String, targetVar: String = "x", depth: Int = 0): SolveResult {
         var origLeft: Node? = null
         var origRight: Node? = null
         var target = targetVar.trim().ifEmpty { "x" }
@@ -3551,19 +3919,9 @@ class CasEngine {
             val radRes = trySolveRadicalEquation(leftAst, rightAst, target, detailedSteps)
             if (radRes != null) return radRes
 
-            if (leftAst is Node.Func && leftAst.fn == "abs" && !rightAst.containsVar(target)) {
-                val rVal = evalNodeAtX(rightAst, 0.0)
-                if (rVal < -1e-9) {
-                    detailedSteps.add(CasStep("Шаг 1", "Анализируем модуль", "|...| = ${formatReadableExpr(rightAst.toExprString())} < 0", "Модуль числа не может быть отрицательным."))
-                    detailedSteps.add(CasStep("Ответ", "Записываем ответ", "Нет действительных корней", "Уравнение не имеет решений."))
-                    return SolveResult("Нет действительных корней", null, detailedSteps.map { "${it.badge}: ${it.title} → ${it.formula}" }, detailedSteps = detailedSteps)
-                }
-                if (abs(rVal) <= 1e-9) {
-                    return isolateVariableFull("${leftAst.arg.toExprString()} = 0", target)
-                }
-                if (leftAst.arg !is Node.Variable || (leftAst.arg as Node.Variable).name != target) {
-                    return solveBranching(leftAst.arg, rightAst, target, detailedSteps, "Раскрываем модуль со знаками плюс и минус")
-                }
+            if (depth <= 3 && (hasAbsWithVar(currentLeft, target) || hasAbsWithVar(currentRight, target))) {
+                val modRes = trySolveModulusEquation(currentLeft, currentRight, target, detailedSteps, depth)
+                if (modRes != null) return modRes
             }
 
             if (leftAst is Node.Pow && leftAst.exp is Node.Num && leftAst.exp.value.den == 1L && leftAst.exp.value.num >= 2L && leftAst.exp.value.num % 2L == 0L && !rightAst.containsVar(target)) {

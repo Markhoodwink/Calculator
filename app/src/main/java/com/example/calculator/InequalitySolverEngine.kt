@@ -2,6 +2,9 @@ package com.example.calculator
 
 import com.example.calculator.CasEngine.Fraction
 import com.example.calculator.CasEngine.Node
+import java.math.BigDecimal
+import java.math.MathContext
+import java.math.RoundingMode
 import kotlin.math.*
 
 enum class IneqOp(val symbol: String) {
@@ -62,6 +65,222 @@ object InequalitySolverEngine {
 
     private data class OpMatch(val op: IneqOp, val index: Int, val matchedLength: Int)
 
+    private data class SignedLog(
+        val sign: Int,          // -1, 0, +1
+        val logAbs: Double,     // ln(|value|), Double.NEGATIVE_INFINITY when sign == 0
+        val maxTermLog: Double = logAbs, // scale of largest additive term (to distinguish true cancellation-zero from tiny underflow!)
+        val isValid: Boolean = true
+    ) {
+        val relativeLog: Double
+            get() = if (sign == 0) Double.NEGATIVE_INFINITY else logAbs - maxTermLog
+
+        fun isEffectivelyZero(relThreshold: Double = -24.0): Boolean =
+            isValid && (sign == 0 || (maxTermLog.isFinite() && (logAbs - maxTermLog) < relThreshold))
+
+        fun toDouble(): Double {
+            if (!isValid) return Double.NaN
+            if (sign == 0) return 0.0
+            if (logAbs > 709.0) return if (sign > 0) Double.POSITIVE_INFINITY else Double.NEGATIVE_INFINITY
+            if (logAbs < -745.0) return 0.0
+            return sign * exp(logAbs)
+        }
+
+        companion object {
+            val INVALID = SignedLog(0, Double.NaN, Double.NaN, isValid = false)
+            val ZERO = SignedLog(0, Double.NEGATIVE_INFINITY, Double.NEGATIVE_INFINITY, isValid = true)
+            fun fromDouble(v: Double): SignedLog {
+                if (v.isNaN() || v.isInfinite()) return INVALID
+                if (v == 0.0) return ZERO
+                val s = if (v > 0.0) 1 else -1
+                val l = ln(abs(v))
+                return SignedLog(s, l, l, isValid = true)
+            }
+        }
+    }
+
+    private fun addSignedLog(a: SignedLog, b: SignedLog): SignedLog {
+        if (!a.isValid || !b.isValid) return SignedLog.INVALID
+        if (a.sign == 0) return b.copy(maxTermLog = maxOf(a.maxTermLog, b.maxTermLog))
+        if (b.sign == 0) return a.copy(maxTermLog = maxOf(a.maxTermLog, b.maxTermLog))
+        val (big, small) = if (a.logAbs >= b.logAbs) Pair(a, b) else Pair(b, a)
+        val maxT = maxOf(a.maxTermLog, b.maxTermLog)
+        val diff = small.logAbs - big.logAbs // <= 0.0
+        if (big.sign == small.sign) {
+            val resLog = if (diff < -40.0) big.logAbs else big.logAbs + ln1p(exp(diff))
+            return SignedLog(big.sign, resLog, maxT, true)
+        } else { // big.sign != small.sign
+            if (diff >= -1e-15) return SignedLog(0, Double.NEGATIVE_INFINITY, maxT, true) // exact cancellation!
+            val resLog = if (diff < -40.0) big.logAbs else big.logAbs + ln(-expm1(diff))
+            return SignedLog(big.sign, resLog, maxT, true)
+        }
+    }
+
+    private fun evalSignedLog(node: Node, x: Double, casEngine: CasEngine): SignedLog {
+        return when (node) {
+            is Node.Num -> SignedLog.fromDouble(node.value.toDouble())
+            is Node.Approx -> SignedLog.fromDouble(node.value)
+            is Node.Variable -> {
+                when (node.name.lowercase()) {
+                    "x" -> SignedLog.fromDouble(x)
+                    "π", "pi" -> SignedLog.fromDouble(Math.PI)
+                    "e" -> SignedLog.fromDouble(Math.E)
+                    else -> {
+                        val constVal = CasEngine.getConstantValue(node.name)
+                        if (constVal != null) SignedLog.fromDouble(constVal)
+                        else SignedLog.fromDouble(casEngine.evalNodeAtX(node, x))
+                    }
+                }
+            }
+            is Node.Add -> addSignedLog(evalSignedLog(node.l, x, casEngine), evalSignedLog(node.r, x, casEngine))
+            is Node.Sub -> addSignedLog(
+                evalSignedLog(node.l, x, casEngine),
+                evalSignedLog(node.r, x, casEngine).let { if (it.isValid) it.copy(sign = -it.sign) else it }
+            )
+            is Node.Mul -> {
+                val l = evalSignedLog(node.l, x, casEngine)
+                val r = evalSignedLog(node.r, x, casEngine)
+                if (!l.isValid || !r.isValid) SignedLog.INVALID
+                else if (l.sign == 0 || r.sign == 0) {
+                    SignedLog(0, Double.NEGATIVE_INFINITY, maxOf(l.maxTermLog + r.maxTermLog, Double.NEGATIVE_INFINITY), true)
+                } else {
+                    SignedLog(l.sign * r.sign, l.logAbs + r.logAbs, l.maxTermLog + r.maxTermLog, true)
+                }
+            }
+            is Node.Div -> {
+                val l = evalSignedLog(node.l, x, casEngine)
+                val r = evalSignedLog(node.r, x, casEngine)
+                if (!l.isValid || !r.isValid || r.sign == 0) SignedLog.INVALID
+                else if (l.sign == 0) {
+                    SignedLog(0, Double.NEGATIVE_INFINITY, l.maxTermLog - r.logAbs, true)
+                } else {
+                    SignedLog(l.sign * r.sign, l.logAbs - r.logAbs, l.maxTermLog - r.logAbs, true)
+                }
+            }
+            is Node.Pow -> {
+                val b = evalSignedLog(node.base, x, casEngine)
+                val e = evalSignedLog(node.exp, x, casEngine)
+                if (!b.isValid || !e.isValid) SignedLog.INVALID
+                else {
+                    val eVal = e.toDouble()
+                    if (eVal.isNaN() || eVal.isInfinite()) SignedLog.INVALID
+                    else if (b.sign > 0) {
+                        val newLog = eVal * b.logAbs
+                        val newMaxT = if (eVal > 0.0 && b.maxTermLog.isFinite()) eVal * b.maxTermLog else newLog
+                        SignedLog(1, newLog, newMaxT, true)
+                    } else if (b.sign == 0) {
+                        if (eVal > 0.0) {
+                            SignedLog(0, Double.NEGATIVE_INFINITY, if (b.maxTermLog.isFinite()) eVal * b.maxTermLog else Double.NEGATIVE_INFINITY, true)
+                        } else if (eVal == 0.0) {
+                            SignedLog.fromDouble(1.0)
+                        } else {
+                            SignedLog.INVALID
+                        }
+                    } else { // b.sign < 0
+                        if (abs(eVal - round(eVal)) < 1e-9) {
+                            val k = round(eVal).toLong()
+                            val s = if (k % 2L == 0L) 1 else -1
+                            val newLog = eVal * b.logAbs
+                            val newMaxT = if (eVal > 0.0 && b.maxTermLog.isFinite()) eVal * b.maxTermLog else newLog
+                            SignedLog(s, newLog, newMaxT, true)
+                        } else {
+                            var oddDenomMatch = false
+                            var s = 1
+                            for (q in 1..99) {
+                                if (abs(eVal * q - round(eVal * q)) < 1e-9) {
+                                    val p = round(eVal * q).toLong()
+                                    if (q % 2 != 0) {
+                                        oddDenomMatch = true
+                                        s = if (p % 2L == 0L) 1 else -1
+                                        break
+                                    }
+                                }
+                            }
+                            if (oddDenomMatch) {
+                                val newLog = eVal * b.logAbs
+                                val newMaxT = if (eVal > 0.0 && b.maxTermLog.isFinite()) eVal * b.maxTermLog else newLog
+                                SignedLog(s, newLog, newMaxT, true)
+                            } else {
+                                SignedLog.INVALID
+                            }
+                        }
+                    }
+                }
+            }
+            is Node.Sqrt -> {
+                val u = evalSignedLog(node.inner, x, casEngine)
+                if (!u.isValid || u.sign < 0) SignedLog.INVALID
+                else if (u.sign == 0) {
+                    SignedLog(0, Double.NEGATIVE_INFINITY, if (u.maxTermLog.isFinite()) 0.5 * u.maxTermLog else Double.NEGATIVE_INFINITY, true)
+                } else {
+                    SignedLog(1, 0.5 * u.logAbs, 0.5 * u.maxTermLog, true)
+                }
+            }
+            is Node.LogBase -> {
+                val b = evalSignedLog(node.base, x, casEngine)
+                val a = evalSignedLog(node.arg, x, casEngine)
+                if (!b.isValid || !a.isValid || b.sign <= 0 || a.sign <= 0) SignedLog.INVALID
+                else if (abs(b.logAbs) < 1e-12) SignedLog.INVALID
+                else SignedLog.fromDouble(a.logAbs / b.logAbs)
+            }
+            is Node.Func -> {
+                val u = evalSignedLog(node.arg, x, casEngine)
+                when (node.fn.lowercase()) {
+                    "abs" -> if (!u.isValid) SignedLog.INVALID else u.copy(sign = if (u.sign == 0) 0 else 1)
+                    "ln" -> if (!u.isValid || u.sign <= 0) SignedLog.INVALID else SignedLog.fromDouble(u.logAbs)
+                    "log", "lg" -> if (!u.isValid || u.sign <= 0) SignedLog.INVALID else SignedLog.fromDouble(u.logAbs / ln(10.0))
+                    "sqrt" -> {
+                        if (!u.isValid || u.sign < 0) SignedLog.INVALID
+                        else if (u.sign == 0) SignedLog(0, Double.NEGATIVE_INFINITY, if (u.maxTermLog.isFinite()) 0.5 * u.maxTermLog else Double.NEGATIVE_INFINITY, true)
+                        else SignedLog(1, 0.5 * u.logAbs, 0.5 * u.maxTermLog, true)
+                    }
+                    "cbrt" -> {
+                        if (!u.isValid) SignedLog.INVALID
+                        else if (u.sign == 0) SignedLog.ZERO
+                        else SignedLog(u.sign, u.logAbs / 3.0, u.maxTermLog / 3.0, true)
+                    }
+                    "sin", "cos", "tan", "tg" -> {
+                        val v = casEngine.evalNodeAtX(node, x)
+                        if (v.isNaN()) SignedLog.INVALID
+                        else if (abs(v) < 1e-14) SignedLog.ZERO
+                        else SignedLog.fromDouble(v)
+                    }
+                    else -> SignedLog.fromDouble(casEngine.evalNodeAtX(node, x))
+                }
+            }
+            is Node.Comb -> {
+                SignedLog.fromDouble(try { casEngine.evalNodeAtX(node, x) } catch (_: Exception) { Double.NaN })
+            }
+        }
+    }
+
+    private fun formatSampleValue(s: SignedLog): String {
+        if (!s.isValid) return "—"
+        if (s.isEffectivelyZero(relThreshold = -20.0)) return "0"
+        val d = s.toDouble()
+        if (d.isFinite() && d != 0.0) {
+            return Fraction.formatDoubleNorm1(d)
+        }
+        if (d.isInfinite()) {
+            return if (s.sign > 0) "+∞" else "-∞"
+        }
+        if (s.maxTermLog.isFinite() && s.logAbs.isFinite()) {
+            val log10Val = s.logAbs / ln(10.0)
+            val exp10 = floor(log10Val).toInt()
+            var mantissa = s.sign * exp(s.logAbs - exp10 * ln(10.0))
+            if (abs(mantissa) >= 10.0) {
+                mantissa /= 10.0
+                val expCorrected = exp10 + 1
+                val bd = BigDecimal(mantissa, MathContext(4, RoundingMode.HALF_UP)).stripTrailingZeros()
+                val sup = Fraction.toSuperscript(expCorrected)
+                return "${bd.toPlainString()} · 10$sup"
+            }
+            val bd = BigDecimal(mantissa, MathContext(4, RoundingMode.HALF_UP)).stripTrailingZeros()
+            val sup = Fraction.toSuperscript(exp10)
+            return "${bd.toPlainString()} · 10$sup"
+        }
+        return if (s.sign > 0) "> 0" else "< 0"
+    }
+
     fun solve(input: String, casEngine: CasEngine = CasEngine()): InequalityResult {
         try {
             val trimmed = input.trim()
@@ -109,31 +328,54 @@ object InequalitySolverEngine {
             val uniqueOdzRules = odzRules.distinctBy { Pair(it.exprString, it.type) }
 
             fun isInOdz(x: Double): Boolean {
-                if (x.isNaN()) return false
+                if (x.isNaN() || x.isInfinite()) return false
                 val snapTrigX = if (isPeriodicTrig) {
                     val mult = round(x / Math.PI)
                     if (abs(x - mult * Math.PI) < 1e-11) mult * Math.PI else x
                 } else x
 
                 for (rule in uniqueOdzRules) {
-                    var v = solveEngine.evalNodeAtX(rule.node, snapTrigX)
+                    val sl = evalSignedLog(rule.node, snapTrigX, solveEngine)
+                    if (!sl.isValid) return false
+                    var v = sl.toDouble()
                     if (isPeriodicTrig && rule.node.toExprString().contains("sin")) {
                         val mult = round(snapTrigX / Math.PI)
                         if (abs(snapTrigX - mult * Math.PI) < 1e-11) {
                             v = 0.0
                         }
                     }
-                    if (v.isNaN()) return false
                     when (rule.type) {
-                        OdzType.DENOMINATOR_NOT_ZERO -> if (abs(v) <= 1e-12) return false
-                        OdzType.SQRT_NON_NEGATIVE -> if (v < -1e-11) return false
-                        OdzType.LOG_ARG_POSITIVE -> if (v <= 1e-12) return false
-                        OdzType.LOG_BASE_POSITIVE -> if (v <= 1e-12) return false
-                        OdzType.LOG_BASE_NOT_ONE -> if (abs(v - 1.0) <= 1e-12) return false
+                        OdzType.DENOMINATOR_NOT_ZERO -> if (sl.isEffectivelyZero(relThreshold = -24.0) || abs(v) <= 1e-12) return false
+                        OdzType.SQRT_NON_NEGATIVE -> if (sl.sign < 0 && !sl.isEffectivelyZero(relThreshold = -24.0)) return false
+                        OdzType.LOG_ARG_POSITIVE -> if (sl.sign <= 0 || sl.isEffectivelyZero(relThreshold = -24.0)) return false
+                        OdzType.LOG_BASE_POSITIVE -> if (sl.sign <= 0 || sl.isEffectivelyZero(relThreshold = -24.0)) return false
+                        OdzType.LOG_BASE_NOT_ONE -> if (sl.sign > 0 && abs(sl.logAbs) <= 1e-12) return false
                     }
                 }
-                val diffVal = solveEngine.evalNodeAtX(diffAst, snapTrigX)
-                return !diffVal.isNaN()
+                val diffSl = evalSignedLog(diffAst, snapTrigX, solveEngine)
+                return diffSl.isValid
+            }
+
+            fun isBaseOdz(x: Double): Boolean {
+                if (x.isNaN() || x.isInfinite()) return false
+                val snapTrigX = if (isPeriodicTrig) {
+                    val mult = round(x / Math.PI)
+                    if (abs(x - mult * Math.PI) < 1e-11) mult * Math.PI else x
+                } else x
+
+                for (rule in uniqueOdzRules) {
+                    if (rule.type == OdzType.DENOMINATOR_NOT_ZERO) continue
+                    val sl = evalSignedLog(rule.node, snapTrigX, solveEngine)
+                    if (!sl.isValid) return false
+                    when (rule.type) {
+                        OdzType.SQRT_NON_NEGATIVE -> if (sl.sign < 0 && !sl.isEffectivelyZero(relThreshold = -24.0)) return false
+                        OdzType.LOG_ARG_POSITIVE -> if (sl.sign <= 0 || sl.isEffectivelyZero(relThreshold = -24.0)) return false
+                        OdzType.LOG_BASE_POSITIVE -> if (sl.sign <= 0 || sl.isEffectivelyZero(relThreshold = -24.0)) return false
+                        OdzType.LOG_BASE_NOT_ONE -> if (sl.sign > 0 && abs(sl.logAbs) <= 1e-12) return false
+                        else -> {}
+                    }
+                }
+                return true
             }
 
             // Collect candidate nodes for critical point discovery
@@ -161,57 +403,89 @@ object InequalitySolverEngine {
                     if (!node.containsVar("x")) continue
                     val compScanSteps = 1600
                     val compStep = (2 * Math.PI) / compScanSteps
-                    for (k in 0 until compScanSteps) {
-                        val x1 = k * compStep
-                        val x2 = x1 + compStep
-                        val y1 = solveEngine.evalNodeAtX(node, x1)
-                        val y2 = solveEngine.evalNodeAtX(node, x2)
-                        if (!y1.isNaN() && !y2.isNaN() && y1 * y2 <= 0) {
-                            val root = bisectionRoot(node, x1, x2, solveEngine)
-                            rawCandidates.add(root)
-                        } else {
-                            val minX = goldenSectionMin(node, x1, x2, solveEngine)
-                            if (minX > min(x1, x2) + 1e-5 && minX < max(x1, x2) - 1e-5) {
-                                val yMin = solveEngine.evalNodeAtX(node, minX)
-                                if (!yMin.isNaN() && abs(yMin) < 1e-7) {
+                    var xPrev = Double.NaN
+                    var sPrev = SignedLog.INVALID
+                    var xCurr = Double.NaN
+                    var sCurr = SignedLog.INVALID
+
+                    for (k in 0..compScanSteps) {
+                        val xNext = k * compStep
+                        val sNext = evalSignedLog(node, xNext, solveEngine)
+
+                        if (!xCurr.isNaN() && !xNext.isNaN() && sCurr.isValid && sNext.isValid) {
+                            if (sCurr.sign == 0 || sNext.sign == 0 || sCurr.sign * sNext.sign < 0) {
+                                val root = bisectionRoot(node, xCurr, xNext, solveEngine)
+                                if (isBaseOdz(root)) {
+                                    rawCandidates.add(root)
+                                }
+                            }
+                        }
+
+                        if (!xPrev.isNaN() && !xCurr.isNaN() && !xNext.isNaN() &&
+                            sPrev.isValid && sCurr.isValid && sNext.isValid
+                        ) {
+                            if (sCurr.relativeLog < -0.5 && sCurr.relativeLog < sPrev.relativeLog && sCurr.relativeLog < sNext.relativeLog) {
+                                val minX = goldenSectionMin(node, xPrev, xNext, solveEngine)
+                                val sMin = evalSignedLog(node, minX, solveEngine)
+                                val minNeighborLog = minOf(sPrev.relativeLog, sNext.relativeLog)
+                                if (sMin.isValid && (sMin.sign == 0 || (sMin.relativeLog < -11.5 && sMin.relativeLog < minNeighborLog - 5.0)) && isBaseOdz(minX)) {
                                     rawCandidates.add(minX)
                                 }
                             }
                         }
+
+                        xPrev = xCurr
+                        sPrev = sCurr
+                        xCurr = xNext
+                        sCurr = sNext
                     }
                 }
 
                 // 2. Multi-scale scan on diffAst on [0, 2π]
                 val periodicSteps = 4000
                 val periodicStep = (2 * Math.PI) / periodicSteps
-                for (k in 0 until periodicSteps) {
-                    val x1 = k * periodicStep
-                    val x2 = x1 + periodicStep
+                var dxPrev = Double.NaN
+                var dsPrev = SignedLog.INVALID
+                var dxCurr = Double.NaN
+                var dsCurr = SignedLog.INVALID
 
-                    val odz1 = isInOdz(x1)
-                    val odz2 = isInOdz(x2)
+                for (k in 0..periodicSteps) {
+                    val xNext = k * periodicStep
+                    val odzNext = isInOdz(xNext)
+                    val sNext = if (odzNext) evalSignedLog(diffAst, xNext, solveEngine) else SignedLog.INVALID
 
-                    if (odz1 != odz2) {
-                        val bnd = bisectionOdzBoundary(x1, x2, ::isInOdz)
-                        rawCandidates.add(bnd)
-                    }
+                    if (!dxCurr.isNaN() && !xNext.isNaN()) {
+                        val odzCurr = isInOdz(dxCurr)
+                        if (odzCurr != odzNext) {
+                            val bnd = bisectionOdzBoundary(dxCurr, xNext, ::isInOdz)
+                            rawCandidates.add(bnd)
+                        }
 
-                    if (odz1 && odz2) {
-                        val y1 = solveEngine.evalNodeAtX(diffAst, x1)
-                        val y2 = solveEngine.evalNodeAtX(diffAst, x2)
-                        if (y1 * y2 <= 0) {
-                            val r = bisectionRoot(diffAst, x1, x2, solveEngine)
-                            rawCandidates.add(r)
-                        } else {
-                            val minX = goldenSectionMin(diffAst, x1, x2, solveEngine)
-                            if (minX > min(x1, x2) + 1e-5 && minX < max(x1, x2) - 1e-5) {
-                                val yMin = solveEngine.evalNodeAtX(diffAst, minX)
-                                if (!yMin.isNaN() && abs(yMin) < 1e-7) {
-                                    rawCandidates.add(minX)
-                                }
+                        if (odzCurr && odzNext && dsCurr.isValid && sNext.isValid) {
+                            if (dsCurr.sign == 0 || sNext.sign == 0 || dsCurr.sign * sNext.sign < 0) {
+                                val r = bisectionRoot(diffAst, dxCurr, xNext, solveEngine)
+                                rawCandidates.add(r)
                             }
                         }
                     }
+
+                    if (!dxPrev.isNaN() && !dxCurr.isNaN() && !xNext.isNaN() &&
+                        dsPrev.isValid && dsCurr.isValid && sNext.isValid
+                    ) {
+                        if (dsCurr.relativeLog < -0.5 && dsCurr.relativeLog < dsPrev.relativeLog && dsCurr.relativeLog < sNext.relativeLog) {
+                            val minX = goldenSectionMin(diffAst, dxPrev, xNext, solveEngine)
+                            val sMin = evalSignedLog(diffAst, minX, solveEngine)
+                            val minNeighborLog = minOf(dsPrev.relativeLog, sNext.relativeLog)
+                            if (sMin.isValid && (sMin.sign == 0 || (sMin.relativeLog < -11.5 && sMin.relativeLog < minNeighborLog - 5.0)) && isInOdz(minX)) {
+                                rawCandidates.add(minX)
+                            }
+                        }
+                    }
+
+                    dxPrev = dxCurr
+                    dsPrev = dsCurr
+                    dxCurr = xNext
+                    dsCurr = sNext
                 }
             } else {
                 // 1. Symbolic isolation & scanning on component expressions
@@ -222,7 +496,7 @@ object InequalitySolverEngine {
                     val solRes = solveEngine.isolateVariableFull(eqStr, "x")
                     if (solRes.primaryNode != null) {
                         val valSol = solveEngine.evalNodeAtX(solRes.primaryNode, 0.0)
-                        if (!valSol.isNaN() && !valSol.isInfinite()) {
+                        if (!valSol.isNaN() && !valSol.isInfinite() && isBaseOdz(valSol)) {
                             rawCandidates.add(valSol)
                         }
                     }
@@ -230,57 +504,89 @@ object InequalitySolverEngine {
                     // Component scan on [-40, 40]
                     val compScanSteps = 1600
                     val compStep = 80.0 / compScanSteps
-                    for (k in 0 until compScanSteps) {
-                        val x1 = -40.0 + k * compStep
-                        val x2 = x1 + compStep
-                        val y1 = solveEngine.evalNodeAtX(node, x1)
-                        val y2 = solveEngine.evalNodeAtX(node, x2)
-                        if (!y1.isNaN() && !y2.isNaN() && y1 * y2 <= 0) {
-                            val root = bisectionRoot(node, x1, x2, solveEngine)
-                            rawCandidates.add(root)
-                        } else {
-                            val minX = goldenSectionMin(node, x1, x2, solveEngine)
-                            if (minX > min(x1, x2) + 1e-5 && minX < max(x1, x2) - 1e-5) {
-                                val yMin = solveEngine.evalNodeAtX(node, minX)
-                                if (!yMin.isNaN() && abs(yMin) < 1e-7) {
+                    var xPrev = Double.NaN
+                    var sPrev = SignedLog.INVALID
+                    var xCurr = Double.NaN
+                    var sCurr = SignedLog.INVALID
+
+                    for (k in 0..compScanSteps) {
+                        val xNext = -40.0 + k * compStep
+                        val sNext = evalSignedLog(node, xNext, solveEngine)
+
+                        if (!xCurr.isNaN() && !xNext.isNaN() && sCurr.isValid && sNext.isValid) {
+                            if (sCurr.sign == 0 || sNext.sign == 0 || sCurr.sign * sNext.sign < 0) {
+                                val root = bisectionRoot(node, xCurr, xNext, solveEngine)
+                                if (isBaseOdz(root)) {
+                                    rawCandidates.add(root)
+                                }
+                            }
+                        }
+
+                        if (!xPrev.isNaN() && !xCurr.isNaN() && !xNext.isNaN() &&
+                            sPrev.isValid && sCurr.isValid && sNext.isValid
+                        ) {
+                            if (sCurr.relativeLog < -0.5 && sCurr.relativeLog < sPrev.relativeLog && sCurr.relativeLog < sNext.relativeLog) {
+                                val minX = goldenSectionMin(node, xPrev, xNext, solveEngine)
+                                val sMin = evalSignedLog(node, minX, solveEngine)
+                                val minNeighborLog = minOf(sPrev.relativeLog, sNext.relativeLog)
+                                if (sMin.isValid && (sMin.sign == 0 || (sMin.relativeLog < -11.5 && sMin.relativeLog < minNeighborLog - 5.0)) && isBaseOdz(minX)) {
                                     rawCandidates.add(minX)
                                 }
                             }
                         }
+
+                        xPrev = xCurr
+                        sPrev = sCurr
+                        xCurr = xNext
+                        sCurr = sNext
                     }
                 }
 
                 // 2. Multi-scale scan on diffAst
                 val denseSteps = 16000
                 val denseStep = 80.0 / denseSteps
-                for (k in 0 until denseSteps) {
-                    val x1 = -40.0 + k * denseStep
-                    val x2 = x1 + denseStep
+                var dxPrev = Double.NaN
+                var dsPrev = SignedLog.INVALID
+                var dxCurr = Double.NaN
+                var dsCurr = SignedLog.INVALID
 
-                    val odz1 = isInOdz(x1)
-                    val odz2 = isInOdz(x2)
+                for (k in 0..denseSteps) {
+                    val xNext = -40.0 + k * denseStep
+                    val odzNext = isInOdz(xNext)
+                    val sNext = if (odzNext) evalSignedLog(diffAst, xNext, solveEngine) else SignedLog.INVALID
 
-                    if (odz1 != odz2) {
-                        val bnd = bisectionOdzBoundary(x1, x2, ::isInOdz)
-                        rawCandidates.add(bnd)
-                    }
+                    if (!dxCurr.isNaN() && !xNext.isNaN()) {
+                        val odzCurr = isInOdz(dxCurr)
+                        if (odzCurr != odzNext) {
+                            val bnd = bisectionOdzBoundary(dxCurr, xNext, ::isInOdz)
+                            rawCandidates.add(bnd)
+                        }
 
-                    if (odz1 && odz2) {
-                        val y1 = solveEngine.evalNodeAtX(diffAst, x1)
-                        val y2 = solveEngine.evalNodeAtX(diffAst, x2)
-                        if (y1 * y2 <= 0) {
-                            val r = bisectionRoot(diffAst, x1, x2, solveEngine)
-                            rawCandidates.add(r)
-                        } else {
-                            val minX = goldenSectionMin(diffAst, x1, x2, solveEngine)
-                            if (minX > min(x1, x2) + 1e-5 && minX < max(x1, x2) - 1e-5) {
-                                val yMin = solveEngine.evalNodeAtX(diffAst, minX)
-                                if (!yMin.isNaN() && abs(yMin) < 1e-7) {
-                                    rawCandidates.add(minX)
-                                }
+                        if (odzCurr && odzNext && dsCurr.isValid && sNext.isValid) {
+                            if (dsCurr.sign == 0 || sNext.sign == 0 || dsCurr.sign * sNext.sign < 0) {
+                                val r = bisectionRoot(diffAst, dxCurr, xNext, solveEngine)
+                                rawCandidates.add(r)
                             }
                         }
                     }
+
+                    if (!dxPrev.isNaN() && !dxCurr.isNaN() && !xNext.isNaN() &&
+                        dsPrev.isValid && dsCurr.isValid && sNext.isValid
+                    ) {
+                        if (dsCurr.relativeLog < -0.5 && dsCurr.relativeLog < dsPrev.relativeLog && dsCurr.relativeLog < sNext.relativeLog) {
+                            val minX = goldenSectionMin(diffAst, dxPrev, xNext, solveEngine)
+                            val sMin = evalSignedLog(diffAst, minX, solveEngine)
+                            val minNeighborLog = minOf(dsPrev.relativeLog, sNext.relativeLog)
+                            if (sMin.isValid && (sMin.sign == 0 || (sMin.relativeLog < -11.5 && sMin.relativeLog < minNeighborLog - 5.0)) && isInOdz(minX)) {
+                                rawCandidates.add(minX)
+                            }
+                        }
+                    }
+
+                    dxPrev = dxCurr
+                    dsPrev = dsCurr
+                    dxCurr = xNext
+                    dsCurr = sNext
                 }
 
                 // Capped wide scan range within [-120.0, 120.0]
@@ -298,9 +604,9 @@ object InequalitySolverEngine {
                         rawCandidates.add(bnd)
                     }
                     if (odz1 && odz2) {
-                        val y1 = solveEngine.evalNodeAtX(diffAst, x1)
-                        val y2 = solveEngine.evalNodeAtX(diffAst, x2)
-                        if (y1 * y2 <= 0) {
+                        val s1 = evalSignedLog(diffAst, x1, solveEngine)
+                        val s2 = evalSignedLog(diffAst, x2, solveEngine)
+                        if (s1.isValid && s2.isValid && (s1.sign == 0 || s2.sign == 0 || s1.sign * s2.sign < 0)) {
                             val r = bisectionRoot(diffAst, x1, x2, solveEngine)
                             rawCandidates.add(r)
                         }
@@ -324,12 +630,24 @@ object InequalitySolverEngine {
                 }
             }
 
+            val exactValidator: (Double) -> Boolean = { cand ->
+                val sDiff = evalSignedLog(diffAst, cand, solveEngine)
+                if (sDiff.isValid && sDiff.isEffectivelyZero(relThreshold = -14.0)) {
+                    true
+                } else {
+                    uniqueOdzRules.any { rule ->
+                        val sRule = evalSignedLog(rule.node, cand, solveEngine)
+                        sRule.isValid && sRule.isEffectivelyZero(relThreshold = -14.0)
+                    }
+                }
+            }
+
             // Deduplicate and snap critical points
             val snappedPoints = mutableListOf<Pair<Double, String>>()
             for (raw in rawCandidates) {
                 if (raw.isNaN() || raw.isInfinite()) continue
                 if (isPeriodicTrig && (raw < -1e-6 || raw > 2 * Math.PI + 1e-6)) continue
-                val (snappedVal, label) = formatExactLabel(raw, hasExpOrLog, isPeriodicTrig, knownBases)
+                val (snappedVal, label) = formatExactLabel(raw, hasExpOrLog, isPeriodicTrig, knownBases, exactValidator)
                 if (isPeriodicTrig && (snappedVal < -1e-6 || snappedVal > 2 * Math.PI + 1e-6)) continue
                 if (snappedPoints.none { abs(it.first - snappedVal) < 1e-5 }) {
                     snappedPoints.add(Pair(snappedVal, label))
@@ -346,14 +664,13 @@ object InequalitySolverEngine {
                 val isTrueOdzBoundary = (!inDomain && (odzLeft || odzRight)) || (odzLeft != odzRight)
 
                 val isTrueZeroOrSignChange = if (inDomain) {
-                    val fVal = solveEngine.evalNodeAtX(diffAst, v)
-                    if (!fVal.isNaN() && abs(fVal) < 1e-5) {
+                    val sVal = evalSignedLog(diffAst, v, solveEngine)
+                    if (sVal.isValid && sVal.isEffectivelyZero(relThreshold = -12.0)) {
                         true
                     } else {
-                        val fLeft = solveEngine.evalNodeAtX(diffAst, v - 1e-3)
-                        val fRight = solveEngine.evalNodeAtX(diffAst, v + 1e-3)
-                        !fLeft.isNaN() && !fRight.isNaN() && odzLeft && odzRight &&
-                                ((fLeft > 1e-7 && fRight < -1e-7) || (fLeft < -1e-7 && fRight > 1e-7))
+                        val sLeft = evalSignedLog(diffAst, v - 1e-3, solveEngine)
+                        val sRight = evalSignedLog(diffAst, v + 1e-3, solveEngine)
+                        sLeft.isValid && sRight.isValid && odzLeft && odzRight && (sLeft.sign * sRight.sign < 0)
                     }
                 } else false
 
@@ -364,7 +681,7 @@ object InequalitySolverEngine {
             val criticalPoints = filteredPoints.map { (v, label) ->
                 val inDomain = isInOdz(v)
                 val isOdzExcluded = !inDomain
-                val fVal = if (inDomain) solveEngine.evalNodeAtX(diffAst, v) else Double.NaN
+                val sVal = if (inDomain) evalSignedLog(diffAst, v, solveEngine) else SignedLog.INVALID
 
                 val isIncluded: Boolean
                 val reason: String
@@ -373,15 +690,15 @@ object InequalitySolverEngine {
                     isIncluded = false
                     reason = getOdzExclusionReason(v, uniqueOdzRules, solveEngine)
                 } else {
-                    val fAbs = abs(fVal)
+                    val isZero = sVal.isValid && sVal.isEffectivelyZero(relThreshold = -12.0)
                     val matchesOp = when (op) {
-                        IneqOp.LE -> fVal <= 1e-7
-                        IneqOp.GE -> fVal >= -1e-7
-                        IneqOp.LT -> fVal < -1e-7
-                        IneqOp.GT -> fVal > 1e-7
+                        IneqOp.LE -> isZero || sVal.sign < 0
+                        IneqOp.GE -> isZero || sVal.sign > 0
+                        IneqOp.LT -> !isZero && sVal.sign < 0
+                        IneqOp.GT -> !isZero && sVal.sign > 0
                     }
                     isIncluded = matchesOp
-                    reason = if (fAbs < 1e-7) "Нуль функции: f($label) = 0"
+                    reason = if (isZero) "Нуль функции: f($label) = 0"
                     else if (isIncluded) "Удовлетворяет условию ${op.symbol}"
                     else "Не удовлетворяет условию ${op.symbol}"
                 }
@@ -406,16 +723,16 @@ object InequalitySolverEngine {
                 if (numP == 0) {
                     val sampleX = Math.PI
                     val inDomain = isInOdz(sampleX)
-                    val fVal = if (inDomain) solveEngine.evalNodeAtX(diffAst, sampleX) else Double.NaN
-                    val sign = if (!inDomain || fVal.isNaN()) 0 else if (fVal > 1e-7) 1 else if (fVal < -1e-7) -1 else 0
-                    val isSol = if (!inDomain || fVal.isNaN()) false else when (op) {
+                    val sVal = if (inDomain) evalSignedLog(diffAst, sampleX, solveEngine) else SignedLog.INVALID
+                    val sign = if (!inDomain || !sVal.isValid) 0 else if (sVal.isEffectivelyZero(relThreshold = -20.0)) 0 else sVal.sign
+                    val isSol = if (!inDomain || !sVal.isValid) false else when (op) {
                         IneqOp.GT -> sign > 0
                         IneqOp.GE -> sign >= 0
                         IneqOp.LT -> sign < 0
                         IneqOp.LE -> sign <= 0
                     }
                     val sampleLabel = formatExactLabel(sampleX, hasExpOrLog, true, knownBases).second
-                    val sampleValueLabel = if (fVal.isNaN()) "—" else Fraction.formatDoubleNorm1(fVal)
+                    val sampleValueLabel = if (!inDomain || !sVal.isValid) "—" else formatSampleValue(sVal)
                     intervals.add(
                         IntervalSegment(
                             start = 0.0,
@@ -451,18 +768,30 @@ object InequalitySolverEngine {
 
                         val sampleX = (a + b) / 2.0
                         val inDomain = isInOdz(sampleX)
-                        val fVal = if (inDomain) solveEngine.evalNodeAtX(diffAst, sampleX) else Double.NaN
+                        val sVal = if (inDomain) evalSignedLog(diffAst, sampleX, solveEngine) else SignedLog.INVALID
 
-                        val sign = if (!inDomain || fVal.isNaN()) 0 else if (fVal > 1e-7) 1 else if (fVal < -1e-7) -1 else 0
-                        val isSol = if (!inDomain || fVal.isNaN()) false else when (op) {
-                            IneqOp.GT -> sign > 0
-                            IneqOp.GE -> sign >= 0
-                            IneqOp.LT -> sign < 0
-                            IneqOp.LE -> sign <= 0
+                        val sign: Int
+                        val isSol: Boolean
+
+                        if (!inDomain || !sVal.isValid) {
+                            sign = 0
+                            isSol = false
+                        } else {
+                            val isZero = sVal.isEffectivelyZero(relThreshold = -20.0)
+                            if (isZero) {
+                                sign = 0
+                                isSol = (op == IneqOp.LE || op == IneqOp.GE)
+                            } else if (sVal.sign > 0) {
+                                sign = 1
+                                isSol = (op == IneqOp.GT || op == IneqOp.GE)
+                            } else {
+                                sign = -1
+                                isSol = (op == IneqOp.LT || op == IneqOp.LE)
+                            }
                         }
 
                         val sampleLabel = formatExactLabel(sampleX, hasExpOrLog, true, knownBases).second
-                        val sampleValueLabel = if (!inDomain || fVal.isNaN()) "—" else Fraction.formatDoubleNorm1(fVal)
+                        val sampleValueLabel = if (!inDomain || !sVal.isValid) "—" else formatSampleValue(sVal)
 
                         val startCp = criticalPoints.find { abs(it.value - a) < 1e-6 }
                         val endCp = criticalPoints.find { abs(it.value - b) < 1e-6 }
@@ -498,19 +827,20 @@ object InequalitySolverEngine {
                     // Select clean interior sample point
                     val sampleX = selectCleanSamplePoint(startVal, endVal)
                     val inDomain = isInOdz(sampleX)
-                    val fVal = if (inDomain) solveEngine.evalNodeAtX(diffAst, sampleX) else Double.NaN
+                    val sVal = if (inDomain) evalSignedLog(diffAst, sampleX, solveEngine) else SignedLog.INVALID
 
                     val sign: Int
                     val isSolution: Boolean
 
-                    if (!inDomain || fVal.isNaN()) {
+                    if (!inDomain || !sVal.isValid) {
                         sign = 0
                         isSolution = false
                     } else {
-                        if (abs(fVal) < 1e-7) {
+                        val isZero = sVal.isEffectivelyZero(relThreshold = -20.0)
+                        if (isZero) {
                             sign = 0
                             isSolution = (op == IneqOp.LE || op == IneqOp.GE)
-                        } else if (fVal > 1e-7) {
+                        } else if (sVal.sign > 0) {
                             sign = 1
                             isSolution = (op == IneqOp.GT || op == IneqOp.GE)
                         } else {
@@ -520,7 +850,7 @@ object InequalitySolverEngine {
                     }
 
                     val sampleLabel = if (inDomain) formatExactLabel(sampleX, hasExpOrLog, false, knownBases).second else ""
-                    val sampleValueLabel = if (!inDomain || fVal.isNaN()) "—" else if (fVal.isInfinite()) (if (fVal > 0) "+∞" else "-∞") else Fraction.formatDoubleNorm1(fVal)
+                    val sampleValueLabel = if (!inDomain || !sVal.isValid) "—" else formatSampleValue(sVal)
 
                     intervals.add(
                         IntervalSegment(
@@ -773,18 +1103,33 @@ object InequalitySolverEngine {
         }
     }
 
+    private fun addBaseToKnown(baseNode: Node, knownBases: MutableSet<Long>) {
+        if (baseNode is Node.Num) {
+            val bVal = baseNode.value.toDouble()
+            if (abs(bVal - round(bVal)) < 1e-6) {
+                val bLong = round(bVal).toLong()
+                if (bLong >= 2L) knownBases.add(bLong)
+            } else if (bVal > 0 && abs(1.0 / bVal - round(1.0 / bVal)) < 1e-6) {
+                val bLong = round(1.0 / bVal).toLong()
+                if (bLong >= 2L) knownBases.add(bLong)
+            }
+        } else if (baseNode is Node.Div) {
+            if (baseNode.l is Node.Num && baseNode.l.value.num == 1L && baseNode.r is Node.Num) {
+                val denVal = baseNode.r.value.toDouble()
+                if (abs(denVal - round(denVal)) < 1e-6) {
+                    val bLong = round(denVal).toLong()
+                    if (bLong >= 2L) knownBases.add(bLong)
+                }
+            }
+        }
+    }
+
     private fun collectExpAndLogInfo(node: Node, knownBases: MutableSet<Long>): Boolean {
         var hasExpOrLog = false
         when (node) {
             is Node.LogBase -> {
                 hasExpOrLog = true
-                if (node.base is Node.Num) {
-                    val bVal = node.base.value.toDouble()
-                    if (abs(bVal - round(bVal)) < 1e-6) {
-                        val bLong = round(bVal).toLong()
-                        if (bLong >= 2L) knownBases.add(bLong)
-                    }
-                }
+                addBaseToKnown(node.base, knownBases)
                 if (collectExpAndLogInfo(node.base, knownBases)) hasExpOrLog = true
                 if (collectExpAndLogInfo(node.arg, knownBases)) hasExpOrLog = true
             }
@@ -796,13 +1141,7 @@ object InequalitySolverEngine {
             }
             is Node.Pow -> {
                 hasExpOrLog = true
-                if (node.base is Node.Num) {
-                    val bVal = node.base.value.toDouble()
-                    if (abs(bVal - round(bVal)) < 1e-6) {
-                        val bLong = round(bVal).toLong()
-                        if (bLong >= 2L) knownBases.add(bLong)
-                    }
-                }
+                addBaseToKnown(node.base, knownBases)
                 if (collectExpAndLogInfo(node.base, knownBases)) hasExpOrLog = true
                 if (collectExpAndLogInfo(node.exp, knownBases)) hasExpOrLog = true
             }
@@ -1112,21 +1451,21 @@ object InequalitySolverEngine {
     private fun bisectionRoot(node: Node, a: Double, b: Double, casEngine: CasEngine): Double {
         var low = min(a, b)
         var high = max(a, b)
-        var fa = casEngine.evalNodeAtX(node, low)
-        var fb = casEngine.evalNodeAtX(node, high)
-        if (fa.isNaN() || fb.isNaN()) return (low + high) / 2.0
-        if (abs(fa) < 1e-12) return low
-        if (abs(fb) < 1e-12) return high
-        for (_iter in 0..60) {
+        var sa = evalSignedLog(node, low, casEngine)
+        var sb = evalSignedLog(node, high, casEngine)
+        if (!sa.isValid || !sb.isValid) return (low + high) / 2.0
+        if (sa.sign == 0 || sa.isEffectivelyZero()) return low
+        if (sb.sign == 0 || sb.isEffectivelyZero()) return high
+        for (_iter in 0..65) {
             val mid = (low + high) / 2.0
-            val fmid = casEngine.evalNodeAtX(node, mid)
-            if (fmid.isNaN() || abs(fmid) < 1e-12 || (high - low) < 1e-12) return mid
-            if (fa * fmid <= 0) {
+            val smid = evalSignedLog(node, mid, casEngine)
+            if (!smid.isValid || smid.sign == 0 || smid.isEffectivelyZero() || (high - low) < 1e-12) return mid
+            if (sa.sign * smid.sign <= 0) {
                 high = mid
-                fb = fmid
+                sb = smid
             } else {
                 low = mid
-                fa = fmid
+                sa = smid
             }
         }
         return (low + high) / 2.0
@@ -1136,7 +1475,7 @@ object InequalitySolverEngine {
         var low = min(a, b)
         var high = max(a, b)
         val stateLow = isInOdzCheck(low)
-        for (_iter in 0..60) {
+        for (_iter in 0..65) {
             val mid = (low + high) / 2.0
             if ((high - low) < 1e-12) return mid
             val stateMid = isInOdzCheck(mid)
@@ -1155,32 +1494,266 @@ object InequalitySolverEngine {
         val phi = (sqrt(5.0) - 1.0) / 2.0
         var c = r - phi * (r - l)
         var d = l + phi * (r - l)
-        var fc = abs(casEngine.evalNodeAtX(node, c).let { if (it.isNaN()) 1e9 else it })
-        var fd = abs(casEngine.evalNodeAtX(node, d).let { if (it.isNaN()) 1e9 else it })
-        for (_iter in 0..50) {
+        var sc = evalSignedLog(node, c, casEngine)
+        var sd = evalSignedLog(node, d, casEngine)
+        var rc = if (sc.isValid) sc.relativeLog else Double.POSITIVE_INFINITY
+        var rd = if (sd.isValid) sd.relativeLog else Double.POSITIVE_INFINITY
+        for (_iter in 0..60) {
             if ((r - l) < 1e-12) break
-            if (fc < fd) {
+            if (rc < rd) {
                 r = d
                 d = c
-                fd = fc
+                rd = rc
                 c = r - phi * (r - l)
-                fc = abs(casEngine.evalNodeAtX(node, c).let { if (it.isNaN()) 1e9 else it })
+                sc = evalSignedLog(node, c, casEngine)
+                rc = if (sc.isValid) sc.relativeLog else Double.POSITIVE_INFINITY
             } else {
                 l = c
                 c = d
-                fc = fd
+                rc = rd
                 d = l + phi * (r - l)
-                fd = abs(casEngine.evalNodeAtX(node, d).let { if (it.isNaN()) 1e9 else it })
+                sd = evalSignedLog(node, d, casEngine)
+                rd = if (sd.isValid) sd.relativeLog else Double.POSITIVE_INFINITY
             }
         }
         return (l + r) / 2.0
+    }
+
+    private fun recognizeQuadraticSurd(x: Double, validator: ((Double) -> Boolean)? = null): String? {
+        var bestScore = Double.MAX_VALUE
+        var bestResult: String? = null
+
+        for (A in 1..12) {
+            for (B in -40..40) {
+                val rawC = -(A.toDouble() * x * x + B.toDouble() * x)
+                val C = round(rawC).toLong()
+                if (abs(C) > 500L) continue
+
+                val scale = A.toDouble() * x * x + abs(B.toDouble() * x) + abs(C.toDouble()) + 1.0
+                if (abs(rawC - C.toDouble()) > 1e-7 * scale) continue
+
+                val D = B.toLong() * B.toLong() - 4L * A.toLong() * C
+                if (D <= 1L) continue
+
+                val rt = sqrt(D.toDouble()).toLong()
+                if (rt * rt == D) continue
+
+                if (gcd(A.toLong(), gcd(abs(B.toLong()), abs(C))) != 1L) continue
+
+                val sqrtD = sqrt(D.toDouble())
+                val rPlus = (-B.toDouble() + sqrtD) / (2.0 * A.toDouble())
+                val rMinus = (-B.toDouble() - sqrtD) / (2.0 * A.toDouble())
+
+                val diffPlus = abs(rPlus - x)
+                val diffMinus = abs(rMinus - x)
+
+                val (exactRoot, isPlus) = if (diffPlus < diffMinus) {
+                    Pair(rPlus, true)
+                } else {
+                    Pair(rMinus, false)
+                }
+
+                if (abs(exactRoot - x) >= 1e-9) continue
+
+                if (validator != null && !validator(exactRoot)) continue
+
+                val score = A.toDouble() * 20.0 + abs(B.toDouble()) * 3.0 + sqrt(abs(C.toDouble()))
+                if (score < bestScore) {
+                    var k = 1L
+                    var m = D
+                    var f = 2L
+                    while (f * f <= m) {
+                        val fSq = f * f
+                        while (m % fSq == 0L) {
+                            k *= f
+                            m /= fSq
+                        }
+                        f++
+                    }
+
+                    val p = -B.toLong()
+                    val q = 2L * A.toLong()
+
+                    val g = gcd(abs(p), gcd(k, q))
+                    val p1 = p / g
+                    val k1 = k / g
+                    val q1 = q / g
+
+                    val radStr = if (k1 == 1L) "√$m" else "${k1}√$m"
+                    val resStr = if (p1 == 0L) {
+                        val signedRad = if (isPlus) radStr else "-$radStr"
+                        if (q1 == 1L) signedRad else "$signedRad/$q1"
+                    } else {
+                        val op = if (isPlus) " + " else " - "
+                        val numStr = "$p1$op$radStr"
+                        if (q1 == 1L) numStr else "($numStr)/$q1"
+                    }
+
+                    bestScore = score
+                    bestResult = resStr
+                }
+            }
+        }
+        return bestResult
+    }
+
+    private fun recognizeHigherRoot(x: Double, validator: ((Double) -> Boolean)? = null): String? {
+        val maxN = if (validator != null) 6 else 4
+        val maxD = if (validator != null) 6 else 4
+        val minS = if (validator != null) -15 else -10
+        val maxS = if (validator != null) 15 else 10
+        val maxM = if (validator != null) 500 else 64
+        val maxDen = if (validator != null) 16 else 8
+        val tol = if (validator != null) 1e-8 else 1e-9
+
+        var bestScore = Double.MAX_VALUE
+        var bestResult: String? = null
+
+        for (n in 3..maxN) {
+            for (d in 1..maxD) {
+                for (s in minS..maxS) {
+                    val u = d.toDouble() * x - s.toDouble()
+                    if (abs(u) < 1e-6 || abs(u) > 50.0) continue
+                    val sign = if (u >= 0.0) 1 else -1
+                    val absU = abs(u)
+                    val powVal = absU.pow(n.toDouble())
+
+                    // Case A (Integer radicand m >= 2):
+                    if (powVal >= 1.5 && powVal <= maxM + 0.5) {
+                        val m = round(powVal).toLong()
+                        if (m in 2L..maxM.toLong()) {
+                            val exactRoot = (s.toDouble() + sign * m.toDouble().pow(1.0 / n.toDouble())) / d.toDouble()
+                            if (abs(exactRoot - x) < tol && (validator == null || validator(exactRoot))) {
+                                val score = n * 15.0 + d * 12.0 + abs(s) * 2.0 + m * 0.5
+                                if (score < bestScore) {
+                                    val formatted = simplifyAndFormatHigherRoot(n, d, s, sign, m, isCaseB = false)
+                                    if (formatted != null) {
+                                        bestScore = score
+                                        bestResult = formatted
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Case B (Unit reciprocal 1 / den):
+                    if (powVal > 0.04 && powVal < 0.9) {
+                        val inv = 1.0 / powVal
+                        val den = round(inv).toLong()
+                        if (den in 2L..maxDen.toLong()) {
+                            val exactRoot = (s.toDouble() + sign * (1.0 / den.toDouble()).pow(1.0 / n.toDouble())) / d.toDouble()
+                            if (abs(exactRoot - x) < tol && (validator == null || validator(exactRoot))) {
+                                val score = n * 15.0 + d * 12.0 + abs(s) * 2.0 + den * 0.5 + 5.0
+                                if (score < bestScore) {
+                                    val formatted = simplifyAndFormatHigherRoot(n, d, s, sign, den, isCaseB = true)
+                                    if (formatted != null) {
+                                        bestScore = score
+                                        bestResult = formatted
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return bestResult
+    }
+
+    private fun simplifyAndFormatHigherRoot(
+        n: Int,
+        d: Int,
+        s: Int,
+        sign: Int,
+        rawM: Long,
+        isCaseB: Boolean
+    ): String? {
+        var curN = n
+        var curM = rawM
+
+        // 1. Reduce root degree if rawM is an exact power base^p with g = gcd(curN, p) > 1
+        for (p in curN downTo 2) {
+            val baseCandidate = round(curM.toDouble().pow(1.0 / p.toDouble())).toLong()
+            if (baseCandidate >= 2L) {
+                var pVal = 1L
+                var overflow = false
+                repeat(p) {
+                    pVal *= baseCandidate
+                    if (pVal > curM * 2) { overflow = true }
+                }
+                if (!overflow && pVal == curM) {
+                    val g = gcd(curN.toLong(), p.toLong()).toInt()
+                    if (g > 1) {
+                        val newN = curN / g
+                        if (newN == 1) return null
+                        curN = newN
+                        val newP = p / g
+                        var newM = 1L
+                        repeat(newP) { newM *= baseCandidate }
+                        curM = newM
+                        break
+                    }
+                }
+            }
+        }
+
+        // 2. Extract maximal curN-th power factor k^curN dividing curM
+        var k = 1L
+        var r = curM
+        var f = 2L
+        while (true) {
+            val fPow = f.toDouble().pow(curN.toDouble()).toLong()
+            if (fPow > r) break
+            while (r % fPow == 0L) {
+                k *= f
+                r /= fPow
+            }
+            f++
+        }
+        if (r < 2L) return null
+
+        // 3. Reduce (s, k, d) by g = gcd(abs(s), gcd(k, d)) when Case A
+        val (s1, k1, d1) = if (!isCaseB) {
+            val g = gcd(abs(s.toLong()), gcd(k, d.toLong()))
+            Triple(s.toLong() / g, k / g, d.toLong() / g)
+        } else {
+            Triple(s.toLong(), k, d.toLong())
+        }
+
+        // 4. Map degree superscript: 2 -> "", 3 -> "³", 4 -> "⁴", 5 -> "⁵", 6 -> "⁶"
+        val sup = when (curN) {
+            3 -> "³"
+            4 -> "⁴"
+            5 -> "⁵"
+            6 -> "⁶"
+            else -> ""
+        }
+
+        // 5. Format radical cleanly:
+        val rad = if (!isCaseB) {
+            "${if (k1 == 1L) "" else k1}${sup}√$r"
+        } else {
+            if (k1 == 1L) "1/${sup}√$r" else "1/($k1${sup}√$r)"
+        }
+
+        // 6. Combine with shift s1 and denominator d1:
+        val num = when {
+            s1 == 0L -> if (sign > 0) rad else "-$rad"
+            sign > 0 && s1 < 0L -> "$rad - ${-s1}"
+            sign > 0 -> "$rad + $s1"
+            sign < 0 && s1 > 0L -> "$s1 - $rad"
+            else -> "$s1 - $rad"
+        }
+
+        return if (d1 == 1L) num else if (s1 == 0L) "$num/$d1" else "($num)/$d1"
     }
 
     fun formatExactLabel(
         x: Double,
         hasExpOrLog: Boolean = false,
         isPeriodicTrig: Boolean = false,
-        knownBases: Set<Long> = emptySet()
+        knownBases: Set<Long> = emptySet(),
+        exactValidator: ((Double) -> Boolean)? = null
     ): Pair<Double, String> {
         // 1. Zero & Integers
         if (abs(x) < 1e-9) return Pair(0.0, "0")
@@ -1225,60 +1798,32 @@ object InequalitySolverEngine {
             }
         }
 
-        // 4. Quadratic Irrationals ((p ± k√d) / r)
-        for (r in 1..8) {
-            for (p in -25..25) {
-                val diff = r.toDouble() * x - p.toDouble()
-                val sq = diff * diff
-                val m = round(sq).toLong()
-                if (m in 2L..200L && abs(sq - m.toDouble()) < 1e-5 * max(1.0, sq)) {
-                    val sqrtM = round(sqrt(m.toDouble())).toLong()
-                    if (sqrtM * sqrtM != m) { // m is NOT a perfect square
-                        val signDiff = if (diff >= 0) 1.0 else -1.0
-                        val calcX = (p.toDouble() + signDiff * sqrt(m.toDouble())) / r.toDouble()
-                        if (abs(x - calcX) < 1e-6) {
-                            var k = 1L
-                            var d = m
-                            for (factor in 14 downTo 2) {
-                                val factorSq = (factor * factor).toLong()
-                                if (d % factorSq == 0L) {
-                                    k *= factor
-                                    d /= factorSq
-                                }
-                            }
-                            val kSign = k * (if (diff >= 0) 1L else -1L)
-                            val g = gcd(gcd(abs(p.toLong()), abs(kSign)), r.toLong())
-                            val pSim = p.toLong() / g
-                            val kSim = kSign / g
-                            val rSim = r.toLong() / g
-                            val valSnapped = (pSim.toDouble() + kSim.toDouble() * sqrt(d.toDouble())) / rSim.toDouble()
-
-                            val label: String
-                            if (pSim == 0L) {
-                                val radPart = if (kSim == 1L) "√$d" else if (kSim == -1L) "-√$d" else "${kSim}√$d"
-                                label = if (rSim == 1L) radPart else "($radPart)/$rSim"
-                            } else {
-                                val radPart = if (kSim > 0) "+ " + (if (kSim == 1L) "√$d" else "${kSim}√$d")
-                                else "- " + (if (kSim == -1L) "√$d" else "${-kSim}√$d")
-                                label = if (rSim == 1L) "$pSim $radPart" else "($pSim $radPart)/$rSim"
-                            }
-                            return Pair(valSnapped, label)
+        // 4. Exact Logarithms (ONLY when hasExpOrLog == true)
+        if (hasExpOrLog && abs(x) < 20.0) {
+            val derivedBases = mutableSetOf<Long>()
+            for (kb in knownBases) {
+                if (kb >= 2L) {
+                    derivedBases.add(kb)
+                    for (k in 2..6) {
+                        val r = round(kb.toDouble().pow(1.0 / k)).toLong()
+                        if (r >= 2L) {
+                            var p = 1L
+                            repeat(k) { p *= r }
+                            if (p == kb) derivedBases.add(r)
                         }
                     }
                 }
             }
-        }
+            val defaultBases = listOf(2L, 3L, 5L, 6L, 10L)
+            val bases = (derivedBases + defaultBases).filter { it >= 2L }.distinct().sorted()
 
-        // 5. Exact Logarithms (ONLY when hasExpOrLog == true)
-        if (hasExpOrLog && abs(x) < 20.0) {
-            val bases = (knownBases + listOf(2L, 3L, 5L, 10L)).filter { it >= 2L }.distinct()
             for (b in bases) {
                 val v = b.toDouble().pow(x)
                 if (!v.isNaN() && !v.isInfinite()) {
                     val roundN = round(v).toLong()
                     if (roundN in 2L..120L) {
                         val targetX = ln(roundN.toDouble()) / ln(b.toDouble())
-                        if (abs(x - targetX) < 1e-6) {
+                        if (abs(x - targetX) < 1e-5) {
                             var isPower = false
                             var temp = roundN
                             while (temp % b == 0L && temp > 1L) {
@@ -1287,7 +1832,21 @@ object InequalitySolverEngine {
                             if (temp == 1L) isPower = true
 
                             if (!isPower) {
-                                val label = "log" + toSubscript(b) + "($roundN)"
+                                var simpleB = b
+                                var simpleN = roundN
+                                for (k in 6 downTo 2) {
+                                    val c = round(simpleB.toDouble().pow(1.0 / k)).toLong()
+                                    val a = round(simpleN.toDouble().pow(1.0 / k)).toLong()
+                                    if (c >= 2L && a >= 1L) {
+                                        var pb = 1L; var pn = 1L
+                                        repeat(k) { pb *= c; pn *= a }
+                                        if (pb == simpleB && pn == simpleN) {
+                                            simpleB = c
+                                            simpleN = a
+                                        }
+                                    }
+                                }
+                                val label = "log" + toSubscript(simpleB) + "($simpleN)"
                                 return Pair(targetX, label)
                             }
                         }
@@ -1300,8 +1859,25 @@ object InequalitySolverEngine {
                                 val qSim = q.toLong() / g
                                 if (qSim > 1L) {
                                     val targetX = ln(pSim.toDouble() / qSim.toDouble()) / ln(b.toDouble())
-                                    if (abs(x - targetX) < 1e-6) {
-                                        val label = "log" + toSubscript(b) + "($pSim/$qSim)"
+                                    if (abs(x - targetX) < 1e-5) {
+                                        var simpleB = b
+                                        var simpleP = pSim
+                                        var simpleQ = qSim
+                                        for (k in 6 downTo 2) {
+                                            val c = round(simpleB.toDouble().pow(1.0 / k)).toLong()
+                                            val a = round(simpleP.toDouble().pow(1.0 / k)).toLong()
+                                            val d = round(simpleQ.toDouble().pow(1.0 / k)).toLong()
+                                            if (c >= 2L && a >= 1L && d >= 1L) {
+                                                var pb = 1L; var pn = 1L; var pd = 1L
+                                                repeat(k) { pb *= c; pn *= a; pd *= d }
+                                                if (pb == simpleB && pn == simpleP && pd == simpleQ) {
+                                                    simpleB = c
+                                                    simpleP = a
+                                                    simpleQ = d
+                                                }
+                                            }
+                                        }
+                                        val label = "log" + toSubscript(simpleB) + "($simpleP/$simpleQ)"
                                         return Pair(targetX, label)
                                     }
                                 }
@@ -1317,7 +1893,7 @@ object InequalitySolverEngine {
                 val roundNE = round(vE).toLong()
                 if (roundNE in 2L..120L) {
                     val targetXE = ln(roundNE.toDouble())
-                    if (abs(x - targetXE) < 1e-6 && roundNE != 1L) {
+                    if (abs(x - targetXE) < 1e-5 && roundNE != 1L) {
                         val label = "ln($roundNE)"
                         return Pair(targetXE, label)
                     }
@@ -1330,7 +1906,7 @@ object InequalitySolverEngine {
                             val qSim = q.toLong() / g
                             if (qSim > 1L) {
                                 val targetXE = ln(pSim.toDouble() / qSim.toDouble())
-                                if (abs(x - targetXE) < 1e-6) {
+                                if (abs(x - targetXE) < 1e-5) {
                                     val label = "ln($pSim/$qSim)"
                                     return Pair(targetXE, label)
                                 }
@@ -1339,6 +1915,18 @@ object InequalitySolverEngine {
                     }
                 }
             }
+        }
+
+        // 5. Quadratic Irrationals ((p ± k√m) / q)
+        val surdLabel = recognizeQuadraticSurd(x, exactValidator)
+        if (surdLabel != null) {
+            return Pair(x, surdLabel)
+        }
+
+        // 5b. Higher-Order Radicals (ⁿ√m)
+        val higherRootLabel = recognizeHigherRoot(x, exactValidator)
+        if (higherRootLabel != null) {
+            return Pair(x, higherRootLabel)
         }
 
         // 6. Fallback
@@ -1367,13 +1955,15 @@ object InequalitySolverEngine {
 
     private fun getOdzExclusionReason(x: Double, rules: List<OdzRule>, casEngine: CasEngine): String {
         for (rule in rules) {
-            val valNode = casEngine.evalNodeAtX(rule.node, x)
+            val sl = evalSignedLog(rule.node, x, casEngine)
+            if (!sl.isValid) return "Вне области допустимых значений (ОДЗ)"
+            val valNode = sl.toDouble()
             when (rule.type) {
-                OdzType.DENOMINATOR_NOT_ZERO -> if (abs(valNode) <= 1e-9) return "Знаменатель равен 0 (${rule.exprString})"
-                OdzType.SQRT_NON_NEGATIVE -> if (valNode < -1e-9) return "Подкоренное выражение < 0 (${rule.exprString})"
-                OdzType.LOG_ARG_POSITIVE -> if (valNode <= 1e-9) return "Аргумент логарифма ≤ 0 (${rule.exprString})"
-                OdzType.LOG_BASE_POSITIVE -> if (valNode <= 1e-9) return "Основание логарифма ≤ 0 (${rule.exprString})"
-                OdzType.LOG_BASE_NOT_ONE -> if (abs(valNode - 1.0) <= 1e-9) return "Основание логарифма равно 1 (${rule.exprString})"
+                OdzType.DENOMINATOR_NOT_ZERO -> if (sl.isEffectivelyZero() || abs(valNode) <= 1e-9) return "Знаменатель равен 0 (${rule.exprString})"
+                OdzType.SQRT_NON_NEGATIVE -> if (sl.sign < 0 && !sl.isEffectivelyZero()) return "Подкоренное выражение < 0 (${rule.exprString})"
+                OdzType.LOG_ARG_POSITIVE -> if (sl.sign <= 0 || sl.isEffectivelyZero()) return "Аргумент логарифма ≤ 0 (${rule.exprString})"
+                OdzType.LOG_BASE_POSITIVE -> if (sl.sign <= 0 || sl.isEffectivelyZero()) return "Основание логарифма ≤ 0 (${rule.exprString})"
+                OdzType.LOG_BASE_NOT_ONE -> if (sl.sign > 0 && abs(sl.logAbs) <= 1e-9) return "Основание логарифма равно 1 (${rule.exprString})"
             }
         }
         return "Вне области допустимых значений (ОДЗ)"

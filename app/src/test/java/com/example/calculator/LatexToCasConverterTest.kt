@@ -388,4 +388,57 @@ class LatexToCasConverterTest {
         val conv6 = LatexToCasConverter.convert(raw6)
         assertEquals("(2x+7)^(2)=(2x-1)^(2)", conv6.casExpression)
     }
+
+    @Test
+    fun test29StackrelInsideNumber() {
+        val raw = """x + \frac { 8 x - 4 5 } { x - 7 } + \frac { x ^ { 2 } + 1 5 x - 1 3 \stackrel { \circ } { 2 } } { x ^ { 2 } - 1 6 x + 6 3 } \leq 1 ."""
+        val converted = LatexToCasConverter.convert(raw)
+
+        assertEquals(ScanTarget.INEQUALITY, converted.recommendedTarget)
+        assertTrue(
+            "Expected casExpression to contain 132, got: ${converted.casExpression}",
+            converted.casExpression.contains("132")
+        )
+        assertFalse(
+            "Expected casExpression NOT to contain 13 * 2, got: ${converted.casExpression}",
+            converted.casExpression.contains("13 * 2")
+        )
+
+        val result = InequalitySolverEngine.solve(converted.casExpression, casEngine)
+        assertNull("Expected no error when solving inequality: ${converted.casExpression}, got error: ${result.errorMessage}", result.errorMessage)
+    }
+
+    @Test
+    fun test30EgeLogSquareDenominatorTouchingZero() {
+        val raw = """\frac{9^{x} - 3^{x + 2} + 8}{\log_{\frac{1}{6}}^{2}(5^{x} - 2) + \log_{\frac{1}{6}}(5^{x} - 2)^{2} + 1} \leqslant 0"""
+        val converted = LatexToCasConverter.convert(raw)
+
+        assertEquals(ScanTarget.INEQUALITY, converted.recommendedTarget)
+        assertTrue(
+            "Expected casExpression to contain ((5^(x)-2)^(2)) inside second log, got: ${converted.casExpression}",
+            converted.casExpression.contains("((5^(x)-2)^(2))")
+        )
+
+        val result = InequalitySolverEngine.solve(converted.casExpression, casEngine)
+        assertNull("Expected no error when solving inequality: ${converted.casExpression}, got error: ${result.errorMessage}", result.errorMessage)
+        assertEquals("x ∈ (log₅(2); log₅(8)) ∪ (log₅(8); log₃(8)]", result.answerFormula)
+    }
+
+    @Test
+    fun test31LegacyTexFontAndSizeSwitches() {
+        val raw = """{ \bf 3 } \cdot { \bf 4 } { \bf 5 } ^ { \mathrm { \scriptsize { x } } } - { \bf 3 } \cdot { \bf 2 } { \bf 7 } ^ { \mathrm { \scriptsize { x } } } - { \bf 2 8 } \cdot { \bf 1 5 } ^ { \mathrm { \scriptsize { x } } } + { \bf 2 8 } \cdot { \bf 9 } ^ { \mathrm { \scriptsize { x } } } + { \bf 9 } \cdot { \bf 5 } ^ { \mathrm { \scriptsize { x } } } - { \bf 3 } ^ { \mathrm { \scriptsize { x + 2 } } } \leq 0"""
+        val converted = LatexToCasConverter.convert(raw)
+
+        assertEquals(ScanTarget.INEQUALITY, converted.recommendedTarget)
+        assertFalse("Expected casExpression NOT to contain 'bf', got: ${converted.casExpression}", converted.casExpression.contains("bf"))
+        assertFalse("Expected casExpression NOT to contain 'scriptsize', got: ${converted.casExpression}", converted.casExpression.contains("scriptsize"))
+        assertFalse("Expected casExpression NOT to contain '4 * 5', got: ${converted.casExpression}", converted.casExpression.contains("4 * 5"))
+        assertTrue("Expected casExpression to contain '45^(x)', got: ${converted.casExpression}", converted.casExpression.contains("45^(x)"))
+        assertTrue("Expected casExpression to contain '27^(x)', got: ${converted.casExpression}", converted.casExpression.contains("27^(x)"))
+        assertTrue("Expected casExpression to contain '15^(x)', got: ${converted.casExpression}", converted.casExpression.contains("15^(x)"))
+        assertTrue("Expected casExpression to contain '3^((x+2))' or '3^(x+2)', got: ${converted.casExpression}", converted.casExpression.contains("3^((x+2))") || converted.casExpression.contains("3^(x+2)"))
+
+        val result = InequalitySolverEngine.solve(converted.casExpression, casEngine)
+        assertNull("Expected no error when solving inequality: ${converted.casExpression}, got error: ${result.errorMessage}", result.errorMessage)
+    }
 }

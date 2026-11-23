@@ -252,14 +252,14 @@ class InequalitySolverManager(
             }
             val result = try {
                 InequalitySolverEngine.solve(expr, engineSnapshot)
-            } catch (e: Exception) {
+            } catch (t: Throwable) {
                 InequalityResult(
-                    answerFormula = "Ошибка: ${e.localizedMessage ?: "Не удалось решить"}",
+                    answerFormula = "Ошибка: ${t.localizedMessage ?: "Не удалось решить"}",
                     intervals = emptyList(),
                     criticalPoints = emptyList(),
                     odzConstraints = emptyList(),
                     detailedSteps = emptyList(),
-                    errorMessage = e.localizedMessage,
+                    errorMessage = t.localizedMessage ?: "Ошибка вычисления",
                     isPeriodic = false
                 )
             }
@@ -273,33 +273,41 @@ class InequalitySolverManager(
     }
 
     private fun displayResult(res: InequalityResult) {
-        lastResult = res
-        val isDark = ThemeManager.isDarkTheme(rootLayout.context)
+        try {
+            lastResult = res
+            val isDark = ThemeManager.isDarkTheme(rootLayout.context)
 
-        if (res.errorMessage != null) {
-            tvIneqAnswer.text = res.errorMessage
+            if (res.errorMessage != null) {
+                tvIneqAnswer.text = res.errorMessage
+                tvIneqAnswer.setTextColor(Color.parseColor("#EF4444"))
+                tvIneqOdz.visibility = View.GONE
+                ineqNumberLineView.clear()
+                btnIneqSteps.visibility = View.GONE
+            } else {
+                tvIneqAnswer.text = res.answerFormula
+                tvIneqAnswer.setTextColor(if (isDark) Color.parseColor("#10B981") else Color.parseColor("#059669"))
+                ineqNumberLineView.setResult(res)
+
+                if (res.odzConstraints.isNotEmpty()) {
+                    tvIneqOdz.text = "ОДЗ: " + res.odzConstraints.joinToString("; ")
+                    tvIneqOdz.visibility = View.VISIBLE
+                } else {
+                    tvIneqOdz.text = "ОДЗ: x ∈ ℝ"
+                    tvIneqOdz.visibility = View.VISIBLE
+                }
+
+                if (res.detailedSteps.isNotEmpty()) {
+                    btnIneqSteps.visibility = View.VISIBLE
+                } else {
+                    btnIneqSteps.visibility = View.GONE
+                }
+            }
+        } catch (t: Throwable) {
+            tvIneqAnswer.text = "Ошибка отображения: ${t.localizedMessage ?: "Ошибка"}"
             tvIneqAnswer.setTextColor(Color.parseColor("#EF4444"))
             tvIneqOdz.visibility = View.GONE
             ineqNumberLineView.clear()
             btnIneqSteps.visibility = View.GONE
-        } else {
-            tvIneqAnswer.text = res.answerFormula
-            tvIneqAnswer.setTextColor(if (isDark) Color.parseColor("#10B981") else Color.parseColor("#059669"))
-            ineqNumberLineView.setResult(res)
-
-            if (res.odzConstraints.isNotEmpty()) {
-                tvIneqOdz.text = "ОДЗ: " + res.odzConstraints.joinToString("; ")
-                tvIneqOdz.visibility = View.VISIBLE
-            } else {
-                tvIneqOdz.text = "ОДЗ: x ∈ ℝ"
-                tvIneqOdz.visibility = View.VISIBLE
-            }
-
-            if (res.detailedSteps.isNotEmpty()) {
-                btnIneqSteps.visibility = View.VISIBLE
-            } else {
-                btnIneqSteps.visibility = View.GONE
-            }
         }
     }
 

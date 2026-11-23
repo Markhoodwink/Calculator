@@ -353,6 +353,8 @@ class MainActivity : AppCompatActivity() {
 
         initModeHub()
         initTheme()
+
+        UpdateChecker.checkForUpdateAsync(this)
     }
 
     private fun openTargetModeWithFormula(target: ScanTarget, casExpr: String) {
@@ -845,8 +847,9 @@ class MainActivity : AppCompatActivity() {
 
         bindKey(R.id.btnCloseBracket) {
             if (isShiftActive) {
-                ensureAnsIfEmpty()
-                casioDisplay.insertText("%")
+                casioDisplay.insertText("|")
+                casioDisplay.insertText("|")
+                casioDisplay.moveLeft()
                 resetShift()
             } else {
                 casioDisplay.insertText(")")
@@ -947,7 +950,7 @@ class MainActivity : AppCompatActivity() {
         setDualKeyText(R.id.btnPow, "x⁻¹", "x^□", hintSizeSp = 9, mainSizeSp = 13, mainColor = blueColor)
         setDualKeyText(R.id.btnPi, "CONST", "π", hintSizeSp = 8, mainSizeSp = 15, mainColor = whiteColor)
         setDualKeyText(R.id.btnOpenBracket, "x!", "(", hintSizeSp = 9, mainSizeSp = 15, mainColor = slateColor)
-        setDualKeyText(R.id.btnCloseBracket, "%", ")", hintSizeSp = 9, mainSizeSp = 15, mainColor = slateColor)
+        setDualKeyText(R.id.btnCloseBracket, "|x|", ")", hintSizeSp = 9, mainSizeSp = 15, mainColor = slateColor)
 
         // Сочетания C / Размещения A (Dual function button)
         setDualKeyText(R.id.btnVarV, "A", "C", hintSizeSp = 9, mainSizeSp = 14, hintColor = hintColor, mainColor = blueColor)

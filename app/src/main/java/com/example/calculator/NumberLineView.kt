@@ -193,81 +193,85 @@ class NumberLineView @JvmOverloads constructor(
             return
         }
 
-        val viewWidth = width.toFloat()
-        val viewHeight = height.toFloat()
-        val axisY = viewHeight * 0.58f
+        try {
+            val viewWidth = width.toFloat()
+            val viewHeight = height.toFloat()
+            val axisY = viewHeight * 0.58f
 
-        val numCp = res.criticalPoints.size
-        val maxLabelWidth = if (numCp > 0) {
-            res.criticalPoints.maxOf { labelTextPaint.measureText(it.label) }
-        } else 0f
-        val minSlotWidth = max(72f * dp, maxLabelWidth + 24f * dp)
-        val sidePadding = 36f * dp
+            val numCp = res.criticalPoints.size
+            val maxLabelWidth = if (numCp > 0) {
+                res.criticalPoints.maxOf { labelTextPaint.measureText(it.label) }
+            } else 0f
+            val minSlotWidth = max(72f * dp, maxLabelWidth + 24f * dp)
+            val sidePadding = 36f * dp
 
-        val requiredWidth = sidePadding * 2 + (numCp + 1) * minSlotWidth
-        val contentWidth = max(viewWidth, requiredWidth)
-        val slotWidth = (contentWidth - sidePadding * 2) / (numCp + 1)
-        maxScrollX = max(0f, contentWidth - viewWidth)
-        scrollXOffset = scrollXOffset.coerceIn(0f, maxScrollX)
+            val requiredWidth = sidePadding * 2 + (numCp + 1) * minSlotWidth
+            val contentWidth = max(viewWidth, requiredWidth)
+            val slotWidth = (contentWidth - sidePadding * 2) / (numCp + 1)
+            maxScrollX = max(0f, contentWidth - viewWidth)
+            scrollXOffset = scrollXOffset.coerceIn(0f, maxScrollX)
 
-        pointXMap.clear()
-        for (i in 0 until numCp) {
-            val px = sidePadding + (i + 1) * slotWidth
-            pointXMap[i] = px
-        }
-
-        intervalBoundsMap.clear()
-        for (i in 0..numCp) {
-            val xLeft = if (i == 0) sidePadding * 0.5f else pointXMap[i - 1]!!
-            val xRight = if (i == numCp) contentWidth - sidePadding * 0.5f else pointXMap[i]!!
-            if (i < res.intervals.size) {
-                intervalBoundsMap.add(Triple(res.intervals[i], xLeft, xRight))
+            pointXMap.clear()
+            for (i in 0 until numCp) {
+                val px = sidePadding + (i + 1) * slotWidth
+                pointXMap[i] = px
             }
-        }
 
-        canvas.save()
-        canvas.translate(-scrollXOffset, 0f)
-
-        // Layer 0: Main Axis & Arrowhead
-        val axisStart = 12f * dp
-        val axisEnd = contentWidth - 12f * dp
-        canvas.drawLine(axisStart, axisY, axisEnd, axisY, axisPaint)
-        drawArrowHead(canvas, axisEnd, axisY, dp)
-
-        // Layer 1: ODZ Exclusion Bands
-        for ((seg, xLeft, xRight) in intervalBoundsMap) {
-            if (!seg.isInDomain) {
-                drawOdzBand(canvas, xLeft, xRight, axisY, dp)
+            intervalBoundsMap.clear()
+            for (i in 0..numCp) {
+                val xLeft = if (i == 0) sidePadding * 0.5f else pointXMap[i - 1]!!
+                val xRight = if (i == numCp) contentWidth - sidePadding * 0.5f else pointXMap[i]!!
+                if (i < res.intervals.size) {
+                    intervalBoundsMap.add(Triple(res.intervals[i], xLeft, xRight))
+                }
             }
-        }
 
-        // Layer 2: Method of Intervals Arcs, Signs & Solution Hatching
-        for ((seg, xLeft, xRight) in intervalBoundsMap) {
-            if (seg.isInDomain) {
-                drawIntervalArcAndSign(canvas, seg, xLeft, xRight, axisY, dp)
+            canvas.save()
+            canvas.translate(-scrollXOffset, 0f)
+
+            // Layer 0: Main Axis & Arrowhead
+            val axisStart = 12f * dp
+            val axisEnd = contentWidth - 12f * dp
+            canvas.drawLine(axisStart, axisY, axisEnd, axisY, axisPaint)
+            drawArrowHead(canvas, axisEnd, axisY, dp)
+
+            // Layer 1: ODZ Exclusion Bands
+            for ((seg, xLeft, xRight) in intervalBoundsMap) {
+                if (!seg.isInDomain) {
+                    drawOdzBand(canvas, xLeft, xRight, axisY, dp)
+                }
             }
+
+            // Layer 2: Method of Intervals Arcs, Signs & Solution Hatching
+            for ((seg, xLeft, xRight) in intervalBoundsMap) {
+                if (seg.isInDomain) {
+                    drawIntervalArcAndSign(canvas, seg, xLeft, xRight, axisY, dp)
+                }
+            }
+
+            // Layer 3: Critical Points & Labels
+            for (i in 0 until numCp) {
+                val cp = res.criticalPoints[i]
+                val px = pointXMap[i]!!
+                val leftSol = res.intervals.getOrNull(i)?.isSolution == true
+                val rightSol = res.intervals.getOrNull(i + 1)?.isSolution == true
+                val isIsolated = cp.isIncluded && !leftSol && !rightSol
+
+                val isSelected = (selectedPoint == cp)
+                drawCriticalPoint(canvas, cp, px, axisY, isIsolated, isSelected, dp)
+
+                val labelY = if (i % 2 == 0) axisY + 22f * dp else axisY + 36f * dp
+                drawPointLabel(canvas, cp.label, px, labelY, isSelected)
+            }
+
+            canvas.restore()
+
+            // Un-scrolled overlays: Legend & Tooltip
+            drawLegend(canvas, dp)
+            drawTooltipCard(canvas, viewWidth, axisY, dp)
+        } catch (t: Throwable) {
+            drawEmptyPlaceholder(canvas)
         }
-
-        // Layer 3: Critical Points & Labels
-        for (i in 0 until numCp) {
-            val cp = res.criticalPoints[i]
-            val px = pointXMap[i]!!
-            val isIsolated = cp.isIncluded &&
-                    !res.intervals[i].isSolution &&
-                    !res.intervals[i + 1].isSolution
-
-            val isSelected = (selectedPoint == cp)
-            drawCriticalPoint(canvas, cp, px, axisY, isIsolated, isSelected, dp)
-
-            val labelY = if (i % 2 == 0) axisY + 22f * dp else axisY + 36f * dp
-            drawPointLabel(canvas, cp.label, px, labelY, isSelected)
-        }
-
-        canvas.restore()
-
-        // Un-scrolled overlays: Legend & Tooltip
-        drawLegend(canvas, dp)
-        drawTooltipCard(canvas, viewWidth, axisY, dp)
     }
 
     private fun drawEmptyPlaceholder(canvas: Canvas) {

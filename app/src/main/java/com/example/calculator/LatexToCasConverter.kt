@@ -100,6 +100,10 @@ object LatexToCasConverter {
         s = s.replace(Regex("""\\left(?![a-zA-Z])\s*"""), "")
         s = s.replace(Regex("""\\right(?![a-zA-Z])\s*"""), "")
 
+        // Strip legacy TeX font and size declaration commands
+        val legacyFontRegex = Regex("""\\(?:bf|rm|it|tt|sf|sl|sc|cal|mit|boldmath|unboldmath|tiny|scriptsize|footnotesize|small|normalsize|large|Large|LARGE|huge|Huge|scriptstyle|scriptscriptstyle|mathnormal|mathstrut|protect|relax)(?![a-zA-Z])""")
+        s = s.replace(legacyFontRegex, " ")
+
         // Unwrap text and font commands using brace-aware helper
         s = unwrapTextCommandsBraceAware(s)
 
@@ -219,7 +223,7 @@ object LatexToCasConverter {
                         }
                     }
                     "ln" -> {
-                        val comp = parseFnPowerAndArg(latex, i, warnings)
+                        val comp = parseFnPowerAndArg(latex, i, warnings, isLogFunction = true)
                         i = comp.nextIdx
                         val convArg = translateLatex(comp.arg, warnings)
                         appendImplicitMulIfNeeded(sb, absOpenCount)
@@ -232,7 +236,7 @@ object LatexToCasConverter {
                         }
                     }
                     "lg" -> {
-                        val comp = parseFnPowerAndArg(latex, i, warnings)
+                        val comp = parseFnPowerAndArg(latex, i, warnings, isLogFunction = true)
                         i = comp.nextIdx
                         val convArg = translateLatex(comp.arg, warnings)
                         appendImplicitMulIfNeeded(sb, absOpenCount)
@@ -253,7 +257,7 @@ object LatexToCasConverter {
                             "arctan", "arctg" -> "atan"
                             else -> cmd
                         }
-                        val comp = parseFnPowerAndArg(latex, i, warnings)
+                        val comp = parseFnPowerAndArg(latex, i, warnings, isLogFunction = false)
                         i = comp.nextIdx
                         val convArg = translateLatex(comp.arg, warnings)
                         appendImplicitMulIfNeeded(sb, absOpenCount)
@@ -269,7 +273,10 @@ object LatexToCasConverter {
                     "ge", "geq", "geqslant" -> sb.append(" ≥ ")
                     "pm" -> sb.append(" ± ")
                     "mp" -> sb.append(" ∓ ")
-                    "cdot", "times", "ast" -> sb.append(" * ")
+                    "cdot", "times", "ast", "star" -> sb.append(" * ")
+                    "circ" -> {
+                        // Ignore cleanly
+                    }
                     "div" -> sb.append(" / ")
                     "pi" -> {
                         appendImplicitMulIfNeeded(sb, absOpenCount)
@@ -284,14 +291,14 @@ object LatexToCasConverter {
                         val (base, i2) = parseArg(latex, i1)
                         i = i2
                         val convBase = translateLatex(base, warnings)
-                        appendImplicitMulIfNeeded(sb, absOpenCount)
+                        appendImplicitMulBeforeExpr(sb, convBase, absOpenCount)
                         sb.append(convBase)
                     }
                     "overline", "underline", "overbrace", "underbrace", "bar", "hat", "vec", "tilde", "widetilde", "widehat" -> {
                         val (inner, i1) = parseArg(latex, i)
                         i = i1
                         val convInner = translateLatex(inner, warnings)
-                        appendImplicitMulIfNeeded(sb, absOpenCount)
+                        appendImplicitMulBeforeExpr(sb, convInner, absOpenCount)
                         sb.append(convInner)
                     }
                     "leftarrow", "rightarrow", "leftrightarrow", "Leftarrow", "Rightarrow", "to",
@@ -339,7 +346,7 @@ object LatexToCasConverter {
                     val firstNonSpace = convInner.trimStart().firstOrNull()
                     val startsWithOp = firstNonSpace != null && firstNonSpace in listOf('=', '≤', '≥', '<', '>', '+', '-', '*', '/')
                     if (!startsWithOp) {
-                        appendImplicitMulIfNeeded(sb, absOpenCount)
+                        appendImplicitMulBeforeExpr(sb, convInner, absOpenCount)
                     }
                     if (needsParensForBareBraces(convInner)) {
                         sb.append("($convInner)")
@@ -393,6 +400,19 @@ object LatexToCasConverter {
         }
 
         return cleanUpExpression(sb.toString())
+    }
+
+    private fun appendImplicitMulBeforeExpr(sb: StringBuilder, expr: String, absOpenCount: Int) {
+        val trimmed = expr.trimStart()
+        if (trimmed.isEmpty()) return
+        val firstChar = trimmed.first()
+        if (firstChar in listOf('=', '≤', '≥', '<', '>', '+', '-', '*', '/', '^', '_')) return
+        val mathFns = listOf("sin(", "cos(", "tan(", "ctg(", "asin(", "acos(", "atan(", "log(", "ln(", "cbrt(")
+        if (mathFns.any { trimmed.startsWith(it) }) {
+            appendImplicitMulIfNeeded(sb, absOpenCount)
+        } else {
+            appendImplicitMulIfNeededForChar(sb, firstChar, absOpenCount)
+        }
     }
 
     private fun appendImplicitMulIfNeeded(sb: StringBuilder, absOpenCount: Int) {
@@ -717,7 +737,8 @@ object LatexToCasConverter {
     private fun parseFnPowerAndArg(
         latex: String,
         startIdx: Int,
-        warnings: MutableList<String>
+        warnings: MutableList<String>,
+        isLogFunction: Boolean = false
     ): FnPowerAndArg {
         var curr = skipWhitespace(latex, startIdx)
         var power: String? = null
@@ -729,7 +750,7 @@ object LatexToCasConverter {
         }
 
         curr = skipWhitespace(latex, curr)
-        val (argStr, nxt) = parseBareFunctionArg(latex, curr, isLogFunction = false)
+        val (argStr, nxt) = parseBareFunctionArg(latex, curr, isLogFunction = isLogFunction)
         return FnPowerAndArg(power, argStr, nxt)
     }
 
@@ -742,7 +763,17 @@ object LatexToCasConverter {
         if (i >= s.length) return Pair("", i)
 
         if (s[i] in listOf('(', '{', '[', '|')) {
-            return parseArg(s, i)
+            if (isLogFunction) {
+                val (inner, afterGroup) = parseArg(s, i)
+                val preCheck = skipWhitespace(s, afterGroup)
+                if (preCheck < s.length && s[preCheck] == '^') {
+                    val (_, afterExp) = parseArg(s, preCheck + 1)
+                    return Pair(s.substring(i, afterExp).trim(), afterExp)
+                }
+                return Pair(inner, afterGroup)
+            } else {
+                return parseArg(s, i)
+            }
         }
 
         val argStart = i

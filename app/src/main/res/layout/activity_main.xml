@@ -666,7 +666,7 @@
                 android:textColor="#F1F5F9"
                 android:textSize="16sp"
                 android:textAllCaps="false"
-                tools:text="%&#10;)" />
+                tools:text="|x|&#10;)" />
         </LinearLayout>
 
         <!-- Ряд 2: Переменные формул и ENG -->

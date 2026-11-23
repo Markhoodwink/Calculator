@@ -308,4 +308,38 @@ class OcrComponentsTest {
         PrintedFormulaPreprocessor.eraseDisconnectedSideSpecks(outPixels2, w, h)
         assertEquals(0, outPixels2[25 * w + 10] and 0xFF) // x = 10 remains dark (0)
     }
+
+    @Test
+    fun testComputePrintedAdaptiveBounds() {
+        val total = 1000
+        val sharpArray = FloatArray(total) { 0.98f }
+        for (i in 0 until 20) {
+            sharpArray[i] = 0.10f
+        }
+
+        val (lowerSharp, upperSharp, p1Sharp) = PrintedFormulaPreprocessor.computePrintedAdaptiveBounds(sharpArray, softAntiMoirePass = false)
+        assertEquals(0.52f, lowerSharp, 0.001f)
+        assertEquals(0.87f, upperSharp, 0.001f)
+        assertTrue(p1Sharp <= 0.44f)
+
+        val (lowerSharpSoft, upperSharpSoft, p1SharpSoft) = PrintedFormulaPreprocessor.computePrintedAdaptiveBounds(sharpArray, softAntiMoirePass = true)
+        assertEquals(0.52f, lowerSharpSoft, 0.001f)
+        assertEquals(0.84f, upperSharpSoft, 0.001f)
+        assertTrue(p1SharpSoft <= 0.44f)
+
+        val fadedArray = FloatArray(total) { 0.98f }
+        for (i in 0 until 20) {
+            fadedArray[i] = 0.66f
+        }
+
+        val (lowerFaded, upperFaded, p1Faded) = PrintedFormulaPreprocessor.computePrintedAdaptiveBounds(fadedArray, softAntiMoirePass = false)
+        assertTrue(lowerFaded >= 0.72f)
+        assertTrue(upperFaded >= 0.91f)
+        assertTrue(p1Faded > 0.44f)
+
+        val (lowerFadedSoft, upperFadedSoft, p1FadedSoft) = PrintedFormulaPreprocessor.computePrintedAdaptiveBounds(fadedArray, softAntiMoirePass = true)
+        assertTrue(lowerFadedSoft >= 0.72f)
+        assertTrue(upperFadedSoft >= 0.92f)
+        assertTrue(p1FadedSoft > 0.44f)
+    }
 }
