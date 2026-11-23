@@ -877,7 +877,7 @@ class ExampleUnitTest {
                 "draft": false,
                 "prerelease": false,
                 "html_url": "https://github.com/Markhoodwink/Calculator/releases/tag/v2.1",
-                "body": "### New Features\n* Support for modulus equations",
+                "body": "### New Features\n* Support for modulus equations\n- **Адаптивные скобки**: Описание\n---\nFull Changelog: https://github.com/Markhoodwink/Calculator/compare/v2.0...v2.1",
                 "assets": [
                     {
                         "name": "MB-CAL-v2.1.apk",
@@ -895,7 +895,11 @@ class ExampleUnitTest {
         assertEquals("2.1", update.versionName)
         assertEquals("https://github.com/Markhoodwink/Calculator/releases/download/v2.1/MB-CAL-v2.1.apk", update.downloadUrl)
         assertTrue(update.releaseNotes.contains("Support for modulus equations"))
+        assertTrue(update.releaseNotes.contains("• Адаптивные скобки: Описание"))
         assertFalse(update.releaseNotes.contains("#"))
+        assertFalse(update.releaseNotes.contains("**"))
+        assertFalse(update.releaseNotes.contains("Full Changelog"))
+        assertFalse(update.releaseNotes.contains("---"))
 
         // When current version is 2.1, no update returned
         val noUpdate = UpdateChecker.parseLatestAppRelease(mockJson, "2.1")
