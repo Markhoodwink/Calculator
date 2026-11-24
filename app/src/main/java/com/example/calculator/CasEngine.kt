@@ -62,27 +62,55 @@ class CasEngine {
             require(den != 0L) { "Деление на ноль" }
         }
 
-        fun simplify(): Fraction {
-            if (num == 0L) return Fraction(0L, 1L)
-            val g = gcd(abs(num), abs(den))
-            val sign = if (den < 0) -1L else 1L
-            return Fraction((num / g) * sign, abs(den) / g)
-        }
+        fun simplify(): Fraction = fromBigIntegers(BigInteger.valueOf(num), BigInteger.valueOf(den))
 
-        operator fun plus(o: Fraction) = Fraction(num * o.den + o.num * den, den * o.den).simplify()
-        operator fun minus(o: Fraction) = Fraction(num * o.den - o.num * den, den * o.den).simplify()
-        operator fun times(o: Fraction) = Fraction(num * o.num, den * o.den).simplify()
-        operator fun div(o: Fraction) = Fraction(num * o.den, den * o.num).simplify()
-        fun negate() = Fraction(-num, den).simplify()
-        fun invert() = Fraction(den, num).simplify()
+        operator fun plus(o: Fraction) = fromBigIntegers(
+            BigInteger.valueOf(num) * BigInteger.valueOf(o.den) + BigInteger.valueOf(o.num) * BigInteger.valueOf(den),
+            BigInteger.valueOf(den) * BigInteger.valueOf(o.den)
+        )
+        operator fun minus(o: Fraction) = fromBigIntegers(
+            BigInteger.valueOf(num) * BigInteger.valueOf(o.den) - BigInteger.valueOf(o.num) * BigInteger.valueOf(den),
+            BigInteger.valueOf(den) * BigInteger.valueOf(o.den)
+        )
+        operator fun times(o: Fraction) = fromBigIntegers(
+            BigInteger.valueOf(num) * BigInteger.valueOf(o.num),
+            BigInteger.valueOf(den) * BigInteger.valueOf(o.den)
+        )
+        operator fun div(o: Fraction) = fromBigIntegers(
+            BigInteger.valueOf(num) * BigInteger.valueOf(o.den),
+            BigInteger.valueOf(den) * BigInteger.valueOf(o.num)
+        )
+        fun negate() = fromBigIntegers(BigInteger.valueOf(num).negate(), BigInteger.valueOf(den))
+        fun invert() = fromBigIntegers(BigInteger.valueOf(den), BigInteger.valueOf(num))
         fun toDouble(): Double = num.toDouble() / den.toDouble()
 
         override fun toString(): String {
-            val s = simplify()
+            val s = try { simplify() } catch (_: Exception) { this }
             return if (s.den == 1L) "${s.num}" else "${s.num}/${s.den}"
         }
 
         companion object {
+            private val BIG_LONG_MAX = BigInteger.valueOf(Long.MAX_VALUE)
+            private val BIG_LONG_MIN = BigInteger.valueOf(Long.MIN_VALUE + 1L) // safe for abs/negate
+
+            fun fromBigIntegers(rawNum: BigInteger, rawDen: BigInteger): Fraction {
+                if (rawDen == BigInteger.ZERO) throw ArithmeticException("Деление на ноль")
+                if (rawNum == BigInteger.ZERO) return Fraction(0L, 1L)
+                var n = rawNum
+                var d = rawDen
+                if (d < BigInteger.ZERO) {
+                    n = n.negate()
+                    d = d.negate()
+                }
+                val g = n.abs().gcd(d)
+                n = n.divide(g)
+                d = d.divide(g)
+                if (n > BIG_LONG_MAX || n < BIG_LONG_MIN || d > BIG_LONG_MAX) {
+                    throw ArithmeticException("Переполнение точной дроби")
+                }
+                return Fraction(n.longValueExact(), d.longValueExact())
+            }
+
             fun gcd(a: Long, b: Long): Long = if (b == 0L) a else gcd(b, a % b)
 
             fun toSuperscript(exp: Int): String {
@@ -661,22 +689,30 @@ class CasEngine {
             is Node.Mul -> {
                 if (node.l is Node.Num) {
                     val rExt = extractSimpleRadicalTerm(node.r)
-                    if (rExt != null) Pair(node.l.value * rExt.first, rExt.second) else null
+                    if (rExt != null) {
+                        try { Pair(node.l.value * rExt.first, rExt.second) } catch (_: Exception) { null }
+                    } else null
                 } else if (node.r is Node.Num) {
                     val lExt = extractSimpleRadicalTerm(node.l)
-                    if (lExt != null) Pair(node.r.value * lExt.first, lExt.second) else null
+                    if (lExt != null) {
+                        try { Pair(node.r.value * lExt.first, lExt.second) } catch (_: Exception) { null }
+                    } else null
                 } else null
             }
             is Node.Div -> {
                 if (node.r is Node.Num && node.r.value.num != 0L) {
                     val lExt = extractSimpleRadicalTerm(node.l)
-                    if (lExt != null) Pair(lExt.first / node.r.value, lExt.second) else null
+                    if (lExt != null) {
+                        try { Pair(lExt.first / node.r.value, lExt.second) } catch (_: Exception) { null }
+                    } else null
                 } else null
             }
             is Node.Sub -> {
                 if (isZero(node.l)) {
                     val rExt = extractSimpleRadicalTerm(node.r)
-                    if (rExt != null) Pair(rExt.first.negate(), rExt.second) else null
+                    if (rExt != null) {
+                        try { Pair(rExt.first.negate(), rExt.second) } catch (_: Exception) { null }
+                    } else null
                 } else null
             }
             else -> null
@@ -759,10 +795,11 @@ class CasEngine {
     }
 
     fun simplifyRadicalFraction(radicand: Fraction): Pair<Fraction, Long> {
-        val s = radicand.simplify()
+        val s = try { radicand.simplify() } catch (_: Exception) { return Pair(Fraction(0), -1L) }
         if (s.num <= 0L) return Pair(Fraction(0), 0L)
         val p = s.num
         val q = s.den
+        if (q > 0L && p > Long.MAX_VALUE / q) return Pair(Fraction(0), -1L)
         val n = p * q
         var k = 1L
         var m = n
@@ -775,7 +812,7 @@ class CasEngine {
             }
             d++
         }
-        val coef = Fraction(k, q).simplify()
+        val coef = try { Fraction(k, q).simplify() } catch (_: Exception) { return Pair(Fraction(0), -1L) }
         return Pair(coef, m)
     }
 
@@ -962,6 +999,9 @@ class CasEngine {
                             if (abs(sumFrac.num) >= 9_000_000_000_000_000L || abs(sumFrac.den) >= 9_000_000_000_000_000L) {
                                 return Node.Approx(sumFrac.toDouble())
                             } else return Node.Num(sumFrac)
+                        } catch (e: ArithmeticException) {
+                            if (e.message == "Деление на ноль") throw e
+                            return Node.Approx(d)
                         } catch (_: Exception) {
                             return Node.Approx(d)
                         }
@@ -988,6 +1028,9 @@ class CasEngine {
                             if (abs(diffFrac.num) >= 9_000_000_000_000_000L || abs(diffFrac.den) >= 9_000_000_000_000_000L) {
                                 return Node.Approx(diffFrac.toDouble())
                             } else return Node.Num(diffFrac)
+                        } catch (e: ArithmeticException) {
+                            if (e.message == "Деление на ноль") throw e
+                            return Node.Approx(d)
                         } catch (_: Exception) {
                             return Node.Approx(d)
                         }
@@ -1033,6 +1076,9 @@ class CasEngine {
                                 if (abs(prodFrac.num) >= 9_000_000_000_000_000L || abs(prodFrac.den) >= 9_000_000_000_000_000L) {
                                     Node.Approx(prodFrac.toDouble())
                                 } else Node.Num(prodFrac)
+                            } catch (e: ArithmeticException) {
+                                if (e.message == "Деление на ноль") throw e
+                                Node.Approx(d)
                             } catch (_: Exception) {
                                 Node.Approx(d)
                             }
@@ -1043,10 +1089,30 @@ class CasEngine {
                     isOne(r) -> l
                     isMinusOne(l) -> simplify(negateNode(r))
                     isMinusOne(r) -> simplify(negateNode(l))
-                    l is Node.Mul && l.l is Node.Num && r is Node.Num ->
-                        simplify(Node.Mul(Node.Num(l.l.value * r.value), l.r))
-                    l is Node.Num && r is Node.Mul && r.l is Node.Num ->
-                        simplify(Node.Mul(Node.Num(l.value * r.l.value), r.r))
+                    l is Node.Mul && l.l is Node.Num && r is Node.Num -> {
+                        try {
+                            simplify(Node.Mul(Node.Num(l.l.value * r.value), l.r))
+                        } catch (e: ArithmeticException) {
+                            if (e.message == "Деление на ноль") throw e
+                            val d = l.l.value.toDouble() * r.value.toDouble()
+                            simplify(Node.Mul(Node.Approx(d), l.r))
+                        } catch (_: Exception) {
+                            val d = l.l.value.toDouble() * r.value.toDouble()
+                            simplify(Node.Mul(Node.Approx(d), l.r))
+                        }
+                    }
+                    l is Node.Num && r is Node.Mul && r.l is Node.Num -> {
+                        try {
+                            simplify(Node.Mul(Node.Num(l.value * r.l.value), r.r))
+                        } catch (e: ArithmeticException) {
+                            if (e.message == "Деление на ноль") throw e
+                            val d = l.value.toDouble() * r.l.value.toDouble()
+                            simplify(Node.Mul(Node.Approx(d), r.r))
+                        } catch (_: Exception) {
+                            val d = l.value.toDouble() * r.l.value.toDouble()
+                            simplify(Node.Mul(Node.Approx(d), r.r))
+                        }
+                    }
                     l.toExprString() == r.toExprString() -> simplify(Node.Pow(l, Node.Num(Fraction(2))))
                     else -> Node.Mul(l, r)
                 }
@@ -1094,6 +1160,7 @@ class CasEngine {
                 when {
                     isZero(r) -> throw ArithmeticException("Деление на ноль")
                     l is Node.Num && r is Node.Num -> {
+                        if (r.value.num == 0L) throw ArithmeticException("Деление на ноль")
                         val d = l.value.toDouble() / r.value.toDouble()
                         if (abs(d) >= 9e15) Node.Approx(d)
                         else {
@@ -1102,6 +1169,9 @@ class CasEngine {
                                 if (abs(divFrac.num) >= 9_000_000_000_000_000L || abs(divFrac.den) >= 9_000_000_000_000_000L) {
                                     Node.Approx(divFrac.toDouble())
                                 } else Node.Num(divFrac)
+                            } catch (e: ArithmeticException) {
+                                if (e.message == "Деление на ноль") throw e
+                                Node.Approx(d)
                             } catch (_: Exception) {
                                 Node.Approx(d)
                             }
@@ -1173,17 +1243,24 @@ class CasEngine {
                             var res = Fraction(1)
                             var overflowed = false
                             for (i in 0 until abs(p)) {
-                                if (b.value.num != 0L && abs(res.num) > Long.MAX_VALUE / abs(b.value.num)) { overflowed = true; break }
-                                if (b.value.den != 0L && abs(res.den) > Long.MAX_VALUE / abs(b.value.den)) { overflowed = true; break }
-                                res = (res * b.value).simplify()
+                                try {
+                                    res = res * b.value
+                                } catch (_: Exception) {
+                                    overflowed = true
+                                    break
+                                }
                             }
                             if (!overflowed) {
-                                val finalFrac = if (p > 0) res else Fraction(1) / res
-                                val d = finalFrac.toDouble()
-                                if (abs(d) >= 9e15 || abs(finalFrac.num) >= 9_000_000_000_000_000L || abs(finalFrac.den) >= 9_000_000_000_000_000L) {
-                                    return Node.Approx(d)
+                                val finalFrac = try {
+                                    if (p > 0) res else Fraction(1) / res
+                                } catch (_: Exception) { null }
+                                if (finalFrac != null) {
+                                    val d = finalFrac.toDouble()
+                                    if (abs(d) >= 9e15 || abs(finalFrac.num) >= 9_000_000_000_000_000L || abs(finalFrac.den) >= 9_000_000_000_000_000L) {
+                                        return Node.Approx(d)
+                                    }
+                                    return Node.Num(finalFrac)
                                 }
-                                return Node.Num(finalFrac)
                             }
                         } catch (_: Exception) {}
                     }
@@ -1226,6 +1303,10 @@ class CasEngine {
                 if (inner is Node.Num) {
                     val (coef, m) = simplifyRadicalFraction(inner.value)
                     if (m == 0L) return Node.Num(Fraction(0))
+                    if (m < 0L) {
+                        val d = sqrt(inner.value.toDouble())
+                        return if (abs(d) >= 9e15) Node.Approx(d) else Node.Num(Fraction.fromDouble(d))
+                    }
                     if (m == 1L) return Node.Num(coef)
                     val sqrtM = Node.Sqrt(Node.Num(Fraction(m)))
                     return when {

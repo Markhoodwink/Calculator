@@ -1104,4 +1104,45 @@ class ExampleUnitTest {
         assertTrue(resErr.displayFormula.startsWith("Ошибка"))
         assertEquals("42", engine.lastAnswer)
     }
+
+    @Test
+    fun testLargeFractionDivisionNoLongOverflow() {
+        val engine = CasEngine()
+
+        // 1. Manual 8.85 * 10^(-12) screenshot expression
+        val exprManual = "((15^2 * 8.85 * 10^(-12) * 10^(-2)) / (2 * ((5 - 0.49) * 10^(-3))^2 * 0.49 * 10^(-3))) * 10^3"
+        val resManual = engine.evaluateFull(exprManual)
+        assertTrue(
+            "Expected displayFormula to start with '0.9989566202', got: ${resManual.displayFormula}",
+            resManual.displayFormula.startsWith("0.9989566202")
+        )
+        assertFalse(
+            "Expected displayFormula NOT to contain '193.23', got: ${resManual.displayFormula}",
+            resManual.displayFormula.contains("193.23")
+        )
+
+        // 2. Exact screenshot expression with ε₀
+        val exprEps = "((15^2 * ε₀ * 10^(-2)) / (2 * ((5 - 0.49) * 10^(-3))^2 * 0.49 * 10^(-3))) * 10^3"
+        val resEps = engine.evaluateFull(exprEps)
+
+        val valManual = resManual.exactFraction?.toDouble()
+            ?: resManual.displayFormula.toDoubleOrNull()
+            ?: engine.evalNodeAtX(resManual.primaryNode!!, 0.0)
+        val valEps = resEps.exactFraction?.toDouble()
+            ?: resEps.displayFormula.toDoubleOrNull()
+            ?: engine.evalNodeAtX(resEps.primaryNode!!, 0.0)
+
+        assertEquals("Both expressions must agree to within 1e-9", valManual, valEps, 1e-9)
+
+        // 3. Coprime 15-digit denominators overflow fallback test
+        val resCoprime = engine.evaluateFull("1 / 999999999999999 + 1 / 999999999999998")
+        assertFalse(
+            "Expected coprime large denominators NOT to overflow to negative value, got: ${resCoprime.displayFormula}",
+            resCoprime.displayFormula.startsWith("-")
+        )
+        val valCoprime = resCoprime.exactFraction?.toDouble()
+            ?: resCoprime.displayFormula.toDoubleOrNull()
+            ?: engine.evalNodeAtX(resCoprime.primaryNode!!, 0.0)
+        assertEquals("Expected result close to 2e-15", 2e-15, valCoprime, 1e-16)
+    }
 }
