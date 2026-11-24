@@ -633,6 +633,131 @@ class CasEngine {
         }
     }
 
+    private fun bigIntExactSqrt(n: BigInteger): BigInteger? {
+        if (n < BigInteger.ZERO) return null
+        if (n == BigInteger.ZERO || n == BigInteger.ONE) return n
+        var x = BigInteger.ONE.shiftLeft((n.bitLength() + 1) / 2)
+        var y = (x + n.divide(x)).shiftRight(1)
+        while (y < x) {
+            x = y
+            y = (x + n.divide(x)).shiftRight(1)
+        }
+        return if (x.multiply(x) == n) x else null
+    }
+
+    private fun extractSimpleRadicalTerm(node: Node): Pair<Fraction, Fraction>? {
+        return when (node) {
+            is Node.Sqrt -> {
+                if (node.inner is Node.Num && node.inner.value.num > 0L) {
+                    Pair(Fraction(1), node.inner.value)
+                } else null
+            }
+            is Node.Pow -> {
+                if (node.exp is Node.Num && node.exp.value == Fraction(1, 2) &&
+                    node.base is Node.Num && node.base.value.num > 0L) {
+                    Pair(Fraction(1), node.base.value)
+                } else null
+            }
+            is Node.Mul -> {
+                if (node.l is Node.Num) {
+                    val rExt = extractSimpleRadicalTerm(node.r)
+                    if (rExt != null) Pair(node.l.value * rExt.first, rExt.second) else null
+                } else if (node.r is Node.Num) {
+                    val lExt = extractSimpleRadicalTerm(node.l)
+                    if (lExt != null) Pair(node.r.value * lExt.first, lExt.second) else null
+                } else null
+            }
+            is Node.Div -> {
+                if (node.r is Node.Num && node.r.value.num != 0L) {
+                    val lExt = extractSimpleRadicalTerm(node.l)
+                    if (lExt != null) Pair(lExt.first / node.r.value, lExt.second) else null
+                } else null
+            }
+            is Node.Sub -> {
+                if (isZero(node.l)) {
+                    val rExt = extractSimpleRadicalTerm(node.r)
+                    if (rExt != null) Pair(rExt.first.negate(), rExt.second) else null
+                } else null
+            }
+            else -> null
+        }
+    }
+
+    private fun sqrtOfRational(f: Fraction): Node {
+        val s = f.simplify()
+        if (s.num == 0L) return Node.Num(Fraction(0))
+        if (s.den == 1L) return simplify(Node.Sqrt(Node.Num(s)))
+
+        val p = s.num
+        val q = s.den
+        if (abs(p) <= Long.MAX_VALUE / q) {
+            val prod = p * q
+            return simplify(Node.Div(simplify(Node.Sqrt(Node.Num(Fraction(prod)))), Node.Num(Fraction(q))))
+        }
+        return simplify(Node.Sqrt(Node.Num(s)))
+    }
+
+    private fun tryDenestNestedRadical(inner: Node): Triple<Node, Node, Int>? {
+        val (a, bSigned, c) = when (inner) {
+            is Node.Add -> {
+                if (inner.l is Node.Num) {
+                    val rExt = extractSimpleRadicalTerm(inner.r)
+                    if (rExt != null) Triple(inner.l.value, rExt.first, rExt.second) else return null
+                } else if (inner.r is Node.Num) {
+                    val lExt = extractSimpleRadicalTerm(inner.l)
+                    if (lExt != null) Triple(inner.r.value, lExt.first, lExt.second) else return null
+                } else return null
+            }
+            is Node.Sub -> {
+                if (inner.l is Node.Num) {
+                    val rExt = extractSimpleRadicalTerm(inner.r)
+                    if (rExt != null) Triple(inner.l.value, rExt.first.negate(), rExt.second) else return null
+                } else if (inner.r is Node.Num) {
+                    val lExt = extractSimpleRadicalTerm(inner.l)
+                    if (lExt != null) Triple(inner.r.value.negate(), lExt.first, lExt.second) else return null
+                } else return null
+            }
+            else -> return null
+        }
+
+        if (a.num <= 0L || bSigned.num == 0L || c.num <= 0L) return null
+        val sign = if (bSigned.num > 0L) 1 else -1
+
+        val aN = BigInteger.valueOf(a.num)
+        val aD = BigInteger.valueOf(a.den)
+        val bN = BigInteger.valueOf(bSigned.num)
+        val bD = BigInteger.valueOf(bSigned.den)
+        val cN = BigInteger.valueOf(c.num)
+        val cD = BigInteger.valueOf(c.den)
+
+        val lhsN = aN * aN * bD * bD * cD
+        val rhsN = bN * bN * cN * aD * aD
+        val deltaN = lhsN - rhsN
+        val deltaD = aD * aD * bD * bD * cD
+
+        if (deltaN < BigInteger.ZERO) return null
+
+        val g = deltaN.gcd(deltaD)
+        val redN = deltaN.divide(g)
+        val redD = deltaD.divide(g)
+
+        val sN = bigIntExactSqrt(redN) ?: return null
+        val sD = bigIntExactSqrt(redD) ?: return null
+
+        val maxLong = BigInteger.valueOf(Long.MAX_VALUE)
+        if (sN > maxLong || sD > maxLong) return null
+
+        val s = Fraction(sN.longValueExact(), sD.longValueExact()).simplify()
+
+        val u = (a + s) / Fraction(2L, 1L)
+        val v = (a - s) / Fraction(2L, 1L)
+
+        val t1 = sqrtOfRational(u)
+        val t2 = sqrtOfRational(v)
+
+        return Triple(t1, t2, sign)
+    }
+
     fun simplifyRadicalFraction(radicand: Fraction): Pair<Fraction, Long> {
         val s = radicand.simplify()
         if (s.num <= 0L) return Pair(Fraction(0), 0L)
@@ -1068,6 +1193,14 @@ class CasEngine {
                         return Node.Num(Fraction.fromDouble(d))
                     }
                 }
+                if (e is Node.Num && e.value == Fraction(1, 2)) {
+                    val triple = if (b !is Node.Num) tryDenestNestedRadical(b) else null
+                    if (triple != null) {
+                        val (t1, t2, sign) = triple
+                        return if (sign > 0) simplify(Node.Add(t1, t2)) else simplify(Node.Sub(t1, t2))
+                    }
+                    return simplify(Node.Sqrt(b))
+                }
                 if (isOne(e)) return b
                 if (isZero(e)) return Node.Num(Fraction(1))
                 if (isZero(b) && e is Node.Num && e.value.num > 0) return Node.Num(Fraction(0))
@@ -1084,6 +1217,12 @@ class CasEngine {
                 if (inner is Node.Num && inner.value.toDouble() < 0) {
                     throw ArithmeticException("Корень из отрицательного числа")
                 }
+                if (!inner.containsVar("x") && !inner.containsVar("y")) {
+                    val dVal = try { evalNodeAtX(inner, 0.0) } catch (_: Exception) { null }
+                    if (dVal != null && dVal < -1e-12) {
+                        throw ArithmeticException("Корень из отрицательного числа")
+                    }
+                }
                 if (inner is Node.Num) {
                     val (coef, m) = simplifyRadicalFraction(inner.value)
                     if (m == 0L) return Node.Num(Fraction(0))
@@ -1099,6 +1238,11 @@ class CasEngine {
                 if (inner is Node.Pow && inner.exp is Node.Num &&
                     inner.exp.value.num == 2L && inner.exp.value.den == 1L) {
                     return inner.base
+                }
+                val triple = tryDenestNestedRadical(inner)
+                if (triple != null) {
+                    val (t1, t2, sign) = triple
+                    return if (sign > 0) simplify(Node.Add(t1, t2)) else simplify(Node.Sub(t1, t2))
                 }
                 Node.Sqrt(inner)
             }
@@ -1944,6 +2088,53 @@ class CasEngine {
             }
         }
 
+        val visitedDenestNodes = mutableSetOf<String>()
+        fun findAndAddDenestingSteps(n: Node) {
+            var innerNode: Node? = null
+            if (n is Node.Sqrt) {
+                innerNode = n.inner
+            } else if (n is Node.Pow && n.exp is Node.Num && n.exp.value == Fraction(1, 2)) {
+                innerNode = n.base
+            }
+
+            if (innerNode != null) {
+                val sInner = simplify(innerNode)
+                if (sInner !is Node.Num) {
+                    val key = sInner.toExprString()
+                    if (visitedDenestNodes.add(key)) {
+                        val triple = tryDenestNestedRadical(sInner)
+                        if (triple != null) {
+                            val (t1, t2, sign) = triple
+                            val denested = if (sign > 0) simplify(Node.Add(t1, t2)) else simplify(Node.Sub(t1, t2))
+                            val sInnerStr = formatReadableExpr(sInner.toExprString())
+                            val denestedStr = formatReadableExpr(denested.toExprString())
+                            steps.add(
+                                CasStep(
+                                    badge = "Шаг ${steps.size}",
+                                    title = "Выделение полного квадрата под корнем",
+                                    formula = "√($sInnerStr) = √(($denestedStr)²) = $denestedStr",
+                                    explanation = "Представляем подкоренное выражение в виде квадрата суммы или разности по формуле сложного радикала."
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+
+            when (n) {
+                is Node.Add -> { findAndAddDenestingSteps(n.l); findAndAddDenestingSteps(n.r) }
+                is Node.Sub -> { findAndAddDenestingSteps(n.l); findAndAddDenestingSteps(n.r) }
+                is Node.Mul -> { findAndAddDenestingSteps(n.l); findAndAddDenestingSteps(n.r) }
+                is Node.Div -> { findAndAddDenestingSteps(n.l); findAndAddDenestingSteps(n.r) }
+                is Node.Pow -> { findAndAddDenestingSteps(n.base); findAndAddDenestingSteps(n.exp) }
+                is Node.Sqrt -> findAndAddDenestingSteps(n.inner)
+                is Node.Func -> findAndAddDenestingSteps(n.arg)
+                is Node.Comb -> { findAndAddDenestingSteps(n.n); findAndAddDenestingSteps(n.k) }
+                else -> {}
+            }
+        }
+        findAndAddDenestingSteps(ast)
+
         if (simplified is Node.Num) {
             val simpleStr = simplified.toExprString()
             if (steps.size == 2) {
@@ -2081,6 +2272,9 @@ class CasEngine {
                 SolveResult(str, simplified, listOf("Ответ: $str"), null, detailedSteps = detailed)
             } else {
                 val str = simplified.toExprString()
+                if (simplified.collectVars().isEmpty()) {
+                    lastAnswer = str
+                }
                 SolveResult(str, simplified, listOf("Упрощено: $str"), detailedSteps = detailed)
             }
         } catch (e: Exception) {
@@ -3564,7 +3758,7 @@ class CasEngine {
         return results
     }
 
-    private fun extractRootsFromSolveResult(res: SolveResult, target: String): List<Double> {
+    fun extractRootsFromSolveResult(res: SolveResult, target: String = "x"): List<Double> {
         val list = mutableListOf<Double>()
         if (res.primaryNode != null) {
             val v = evalNodeAtX(res.primaryNode, 0.0)

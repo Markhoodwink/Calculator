@@ -3,8 +3,10 @@ package com.example.calculator
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.text.Editable
+import android.text.InputType
 import android.text.TextWatcher
 import android.view.Gravity
 import android.view.LayoutInflater
@@ -12,13 +14,133 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
+import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
+import java.math.BigDecimal
+import java.math.MathContext
+import java.math.RoundingMode
 import java.util.Locale
 import kotlin.math.*
+
+data class ParamConfig(
+    var value: Double = 1.0,
+    var min: Double = -10.0,
+    var max: Double = 10.0,
+    var step: Double = 0.1 // 0.0 means continuous / smooth sliding
+)
+
+object GraphParamHelper {
+
+    fun parseParamNumber(raw: String): Double? {
+        var s = raw.trim()
+            .replace(',', '.')
+            .replace('−', '-')
+            .replace("pi", "π", ignoreCase = true)
+            .replace("п", "π", ignoreCase = true)
+            .replace("П", "π")
+            .replace("\\s+".toRegex(), "")
+        if (s.isEmpty()) return null
+
+        return try {
+            if (s.contains('/')) {
+                val parts = s.split('/')
+                if (parts.size != 2) return null
+                val num = parsePiOrDouble(parts[0]) ?: return null
+                val den = parsePiOrDouble(parts[1]) ?: return null
+                if (den == 0.0) return null
+                val res = num / den
+                if (res.isNaN() || res.isInfinite()) null else res
+            } else {
+                val res = parsePiOrDouble(s) ?: return null
+                if (res.isNaN() || res.isInfinite()) null else res
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun parsePiOrDouble(part: String): Double? {
+        if (part.isEmpty()) return null
+        if (part.contains('π')) {
+            var p = part.replace("*", "")
+            if (p == "π") return Math.PI
+            if (p == "-π") return -Math.PI
+            if (p == "+π") return Math.PI
+            p = p.replace("π", "")
+            val coeff = p.toDoubleOrNull() ?: return null
+            return coeff * Math.PI
+        }
+        return part.toDoubleOrNull()
+    }
+
+    fun cleanDust(res: Double): Double {
+        if (abs(res) < 1e-11) return 0.0
+        return try {
+            BigDecimal(res, MathContext(10, RoundingMode.HALF_UP))
+                .stripTrailingZeros()
+                .toDouble()
+        } catch (_: Exception) {
+            res
+        }
+    }
+
+    fun snapParamValue(raw: Double, min: Double, max: Double, step: Double): Double {
+        val clamped = raw.coerceIn(min, max)
+        val res = if (step > 0.0) {
+            val grid = round(clamped / step) * step
+            if (grid < min || grid > max) {
+                (min + round((clamped - min) / step) * step).coerceIn(min, max)
+            } else {
+                grid.coerceIn(min, max)
+            }
+        } else {
+            clamped
+        }
+        return cleanDust(res)
+    }
+
+    fun stepParamValue(current: Double, deltaSteps: Int, min: Double, max: Double, step: Double): Double {
+        val effectiveStep = if (step > 0.0) step else (max - min) / 100.0
+        return snapParamValue(current + deltaSteps * effectiveStep, min, max, step)
+    }
+
+    fun formatParamNumber(value: Double): String {
+        val v = if (abs(value) < 1e-11) 0.0 else value
+        if (v == 0.0) return "0"
+        val cleaned = cleanDust(v)
+        val formatted = String.format(Locale.US, "%.6f", cleaned)
+            .trimEnd('0')
+            .trimEnd('.')
+        return if (formatted == "-0" || formatted == "-0.0") "0" else formatted
+    }
+
+    fun computeSeekBarMax(min: Double, max: Double, step: Double): Int {
+        return if (step > 0.0) {
+            val steps = round((max - min) / step).toInt()
+            if (steps in 1..2000) steps else 1000
+        } else {
+            1000
+        }
+    }
+
+    fun progressToParamValue(progress: Int, seekBarMax: Int, min: Double, max: Double, step: Double): Double {
+        if (seekBarMax <= 0) return min
+        val frac = progress.toDouble() / seekBarMax.toDouble()
+        val raw = min + frac * (max - min)
+        return snapParamValue(raw, min, max, step)
+    }
+
+    fun paramValueToProgress(value: Double, seekBarMax: Int, min: Double, max: Double): Int {
+        if (max <= min) return 0
+        val clamped = value.coerceIn(min, max)
+        val frac = (clamped - min) / (max - min)
+        return round(frac * seekBarMax).toInt().coerceIn(0, seekBarMax)
+    }
+}
 
 class GraphModeManager(
     private val rootLayout: View,
@@ -86,9 +208,16 @@ class GraphModeManager(
     private var activeEditText: EditText? = null
     private var activeSeriesItem: SeriesItem? = null
 
-    // Значения параметров (a, b, k...)
+    // Конфигурации и значения параметров (a, b, k...)
+    val paramConfigs: MutableMap<String, ParamConfig> = mutableMapOf()
     val paramValues: MutableMap<String, Double> = mutableMapOf()
     private val paramSliderViews: MutableMap<String, View> = mutableMapOf()
+
+    // Анимация параметров
+    private var activeAnimParam: String? = null
+    private var animDirection: Int = 1
+    private val animHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var animRunnable: Runnable? = null
 
     init {
         setupTabs()
@@ -348,6 +477,19 @@ class GraphModeManager(
         fabToggleGraphKeypad.setTextColor(
             if (isDark) Color.parseColor("#10B981") else Color.parseColor("#059669")
         )
+
+        // Обновляем параметры в соответствии с текущей темой
+        if (paramConfigs.isNotEmpty()) {
+            containerParameterSliders.removeAllViews()
+            paramSliderViews.clear()
+            val sortedParams = paramConfigs.keys.sorted()
+            for (param in sortedParams) {
+                val cfg = paramConfigs[param]!!
+                val row = createParamRowView(param, cfg)
+                containerParameterSliders.addView(row)
+                paramSliderViews[param] = row
+            }
+        }
     }
 
     private fun setupTabs() {
@@ -502,17 +644,20 @@ class GraphModeManager(
 
         val sortedParams = foundParams.sorted()
 
-        // Инициализируем значения по умолчанию (1.0) для новых параметров
+        // Инициализируем конфиги по умолчанию для новых параметров
         for (p in sortedParams) {
-            if (paramValues[p] == null) {
-                paramValues[p] = 1.0
+            if (paramConfigs[p] == null) {
+                paramConfigs[p] = ParamConfig(value = 1.0, min = -10.0, max = 10.0, step = 0.1)
             }
+            paramValues[p] = paramConfigs[p]!!.value
         }
 
         // Удаляем параметры, которых больше нет
-        val removedKeys = paramValues.keys.filter { it !in foundParams }
+        val removedKeys = paramConfigs.keys.filter { it !in foundParams }
         for (k in removedKeys) {
+            paramConfigs.remove(k)
             paramValues.remove(k)
+            stopAnimation(k)
         }
 
         // Если набор параметров изменился, пересоздаем ползунки
@@ -520,65 +665,9 @@ class GraphModeManager(
             containerParameterSliders.removeAllViews()
             paramSliderViews.clear()
 
-            val context = rootLayout.context
-            val dp = context.resources.displayMetrics.density
-
             for (param in sortedParams) {
-                val curVal = paramValues[param] ?: 1.0
-
-                val row = LinearLayout(context).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    layoutParams = LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        (34 * dp).toInt()
-                    ).apply {
-                        setMargins(0, (2 * dp).toInt(), 0, (2 * dp).toInt())
-                    }
-                    val bg = GradientDrawable().apply {
-                        shape = GradientDrawable.RECTANGLE
-                        cornerRadius = 6f * dp
-                        setColor(Color.parseColor("#131B2A"))
-                        setStroke((1f * dp).toInt(), Color.parseColor("#334155"))
-                    }
-                    background = bg
-                    setPadding((10 * dp).toInt(), 0, (10 * dp).toInt(), 0)
-                }
-
-                val tvLabel = TextView(context).apply {
-                    layoutParams = LinearLayout.LayoutParams((72 * dp).toInt(), LinearLayout.LayoutParams.WRAP_CONTENT)
-                    text = "$param = ${String.format(Locale.US, "%.1f", curVal)}"
-                    setTextColor(Color.parseColor("#38BDF8"))
-                    textSize = 13f
-                    typeface = Typeface.MONOSPACE
-                    setTypeface(typeface, Typeface.BOLD)
-                }
-
-                val seekBar = SeekBar(context).apply {
-                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                    max = 200 // от -10.0 до +10.0 с шагом 0.1
-                    progress = (((curVal - (-10.0)) / 0.1).roundToInt()).coerceIn(0, 200)
-                    progressTintList = ColorStateList.valueOf(Color.parseColor("#38BDF8"))
-                    thumbTintList = ColorStateList.valueOf(Color.parseColor("#38BDF8"))
-                }
-
-                seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                    override fun onProgressChanged(sb: SeekBar?, prog: Int, fromUser: Boolean) {
-                        if (fromUser) {
-                            val v = -10.0 + prog * 0.1
-                            val rounded = round(v * 10.0) / 10.0
-                            paramValues[param] = rounded
-                            tvLabel.text = "$param = ${String.format(Locale.US, "%.1f", rounded)}"
-                            plotAll(silent = true)
-                        }
-                    }
-                    override fun onStartTrackingTouch(sb: SeekBar?) {}
-                    override fun onStopTrackingTouch(sb: SeekBar?) {}
-                })
-
-                row.addView(tvLabel)
-                row.addView(seekBar)
-
+                val cfg = paramConfigs[param] ?: ParamConfig().also { paramConfigs[param] = it }
+                val row = createParamRowView(param, cfg)
                 containerParameterSliders.addView(row)
                 paramSliderViews[param] = row
             }
@@ -587,6 +676,546 @@ class GraphModeManager(
         containerParameterSliders.visibility = if (sortedParams.isEmpty()) View.GONE else View.VISIBLE
 
         plotAll(silent = true)
+    }
+
+    private fun startAnimation(param: String) {
+        if (activeAnimParam != null && activeAnimParam != param) {
+            stopAnimation(activeAnimParam!!)
+        }
+        activeAnimParam = param
+        animDirection = 1
+        updatePlayButtonState(param)
+        scheduleAnimFrame()
+    }
+
+    private fun stopAnimation(param: String) {
+        if (activeAnimParam == param) {
+            activeAnimParam = null
+            animRunnable?.let { animHandler.removeCallbacks(it) }
+            animRunnable = null
+            updatePlayButtonState(param)
+        }
+    }
+
+    private fun stopAllAnimations() {
+        activeAnimParam?.let { stopAnimation(it) }
+    }
+
+    private fun updatePlayButtonState(param: String) {
+        val rowView = paramSliderViews[param] ?: return
+        val btnPlay = rowView.findViewWithTag<TextView>("btnPlay") ?: return
+        btnPlay.text = if (activeAnimParam == param) "⏸" else "▶"
+    }
+
+    private fun scheduleAnimFrame() {
+        animRunnable?.let { animHandler.removeCallbacks(it) }
+        val runnable = object : Runnable {
+            override fun run() {
+                val param = activeAnimParam ?: return
+                val cfg = paramConfigs[param] ?: return
+
+                val span = cfg.max - cfg.min
+                if (span <= 0) return
+
+                val isDiscreteStep = cfg.step > 0.0 && (span / cfg.step) <= 400.0
+                val delta = if (isDiscreteStep) {
+                    cfg.step * animDirection
+                } else {
+                    (span / 200.0) * animDirection
+                }
+
+                var nextVal = cfg.value + delta
+                if (nextVal >= cfg.max) {
+                    nextVal = cfg.max
+                    animDirection = -1
+                } else if (nextVal <= cfg.min) {
+                    nextVal = cfg.min
+                    animDirection = 1
+                }
+
+                cfg.value = GraphParamHelper.snapParamValue(nextVal, cfg.min, cfg.max, cfg.step)
+                paramValues[param] = cfg.value
+
+                updateParamRowUI(param)
+                plotAll(silent = true)
+
+                val delayMs = if (isDiscreteStep) 60L else 30L
+                if (activeAnimParam == param) {
+                    animHandler.postDelayed(this, delayMs)
+                }
+            }
+        }
+        animRunnable = runnable
+        animHandler.postDelayed(runnable, 30L)
+    }
+
+    private fun updateParamRowUI(param: String) {
+        val cfg = paramConfigs[param] ?: return
+        val rowView = paramSliderViews[param] ?: return
+
+        val tvLabel = rowView.findViewWithTag<TextView>("tvLabel")
+        val tvRange = rowView.findViewWithTag<TextView>("tvRange")
+        val chipStep = rowView.findViewWithTag<TextView>("chipStep")
+        val seekBar = rowView.findViewWithTag<SeekBar>("seekBar")
+
+        tvLabel?.text = "$param = ${GraphParamHelper.formatParamNumber(cfg.value)}"
+        tvRange?.text = "[${GraphParamHelper.formatParamNumber(cfg.min)}, ${GraphParamHelper.formatParamNumber(cfg.max)}]"
+        chipStep?.text = if (cfg.step == 0.0) "плавно" else "шаг ${GraphParamHelper.formatParamNumber(cfg.step)}"
+
+        if (seekBar != null) {
+            val newMax = GraphParamHelper.computeSeekBarMax(cfg.min, cfg.max, cfg.step)
+            seekBar.max = newMax
+            seekBar.progress = GraphParamHelper.paramValueToProgress(cfg.value, newMax, cfg.min, cfg.max)
+        }
+    }
+
+    private fun createParamRowView(param: String, cfg: ParamConfig): View {
+        val context = rootLayout.context
+        val dp = context.resources.displayMetrics.density
+        val isDark = ThemeManager.isDarkTheme(context)
+
+        val cardView = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins(0, (3 * dp).toInt(), 0, (3 * dp).toInt())
+            }
+            val bg = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = 8f * dp
+                setColor(if (isDark) Color.parseColor("#131B2A") else Color.parseColor("#F8FAFC"))
+                setStroke((1f * dp).toInt(), if (isDark) Color.parseColor("#334155") else Color.parseColor("#CBD5E1"))
+            }
+            background = bg
+            setPadding((8 * dp).toInt(), (6 * dp).toInt(), (8 * dp).toInt(), (6 * dp).toInt())
+        }
+
+        // Row 1: Header (Play, Label, Spacer, Range, Step Chip)
+        val headerRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        val btnPlay = TextView(context).apply {
+            tag = "btnPlay"
+            layoutParams = LinearLayout.LayoutParams((28 * dp).toInt(), (28 * dp).toInt())
+            gravity = Gravity.CENTER
+            text = if (activeAnimParam == param) "⏸" else "▶"
+            setTextColor(if (isDark) Color.parseColor("#10B981") else Color.parseColor("#059669"))
+            textSize = 14f
+            setTypeface(typeface, Typeface.BOLD)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = 6f * dp
+                setColor(if (isDark) Color.parseColor("#1E293B") else Color.parseColor("#E2E8F0"))
+            }
+            setOnClickListener {
+                onHaptic(it)
+                if (activeAnimParam == param) {
+                    stopAnimation(param)
+                } else {
+                    startAnimation(param)
+                }
+            }
+        }
+
+        val tvLabel = TextView(context).apply {
+            tag = "tvLabel"
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins((6 * dp).toInt(), 0, 0, 0)
+            }
+            text = "$param = ${GraphParamHelper.formatParamNumber(cfg.value)}"
+            setTextColor(if (isDark) Color.parseColor("#38BDF8") else Color.parseColor("#0284C7"))
+            textSize = 13f
+            typeface = Typeface.MONOSPACE
+            setTypeface(typeface, Typeface.BOLD)
+        }
+
+        val spacer = View(context).apply {
+            layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
+        }
+
+        val tvRange = TextView(context).apply {
+            tag = "tvRange"
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins(0, 0, (6 * dp).toInt(), 0)
+            }
+            text = "[${GraphParamHelper.formatParamNumber(cfg.min)}, ${GraphParamHelper.formatParamNumber(cfg.max)}]"
+            setTextColor(if (isDark) Color.parseColor("#94A3B8") else Color.parseColor("#64748B"))
+            textSize = 11f
+            setOnClickListener {
+                onHaptic(it)
+                stopAnimation(param)
+                showParamSettingsDialog(param)
+            }
+        }
+
+        val chipStep = TextView(context).apply {
+            tag = "chipStep"
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            text = if (cfg.step == 0.0) "плавно" else "шаг ${GraphParamHelper.formatParamNumber(cfg.step)}"
+            setTextColor(if (isDark) Color.parseColor("#38BDF8") else Color.parseColor("#0284C7"))
+            textSize = 11f
+            setTypeface(typeface, Typeface.BOLD)
+            setPadding((6 * dp).toInt(), (2 * dp).toInt(), (6 * dp).toInt(), (2 * dp).toInt())
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = 12f * dp
+                setColor(if (isDark) Color.parseColor("#1E293B") else Color.parseColor("#E2E8F0"))
+                setStroke((1f * dp).toInt(), if (isDark) Color.parseColor("#0284C7") else Color.parseColor("#0284C7"))
+            }
+            setOnClickListener {
+                onHaptic(it)
+                stopAnimation(param)
+                showParamSettingsDialog(param)
+            }
+        }
+
+        headerRow.addView(btnPlay)
+        headerRow.addView(tvLabel)
+        headerRow.addView(spacer)
+        headerRow.addView(tvRange)
+        headerRow.addView(chipStep)
+
+        // Row 2: Slider row (Minus, SeekBar, Plus)
+        val sliderRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins(0, (4 * dp).toInt(), 0, 0)
+            }
+        }
+
+        val btnMinus = TextView(context).apply {
+            tag = "btnMinus"
+            layoutParams = LinearLayout.LayoutParams((28 * dp).toInt(), (28 * dp).toInt())
+            gravity = Gravity.CENTER
+            text = "−"
+            setTextColor(if (isDark) Color.parseColor("#F8FAFC") else Color.parseColor("#0F172A"))
+            textSize = 16f
+            setTypeface(typeface, Typeface.BOLD)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = 6f * dp
+                setColor(if (isDark) Color.parseColor("#1E293B") else Color.parseColor("#E2E8F0"))
+                setStroke((1f * dp).toInt(), if (isDark) Color.parseColor("#334155") else Color.parseColor("#CBD5E1"))
+            }
+            setOnClickListener {
+                onHaptic(it)
+                stopAnimation(param)
+                val newVal = GraphParamHelper.stepParamValue(cfg.value, -1, cfg.min, cfg.max, cfg.step)
+                cfg.value = newVal
+                paramValues[param] = newVal
+                updateParamRowUI(param)
+                plotAll(silent = true)
+            }
+        }
+
+        val seekBarMax = GraphParamHelper.computeSeekBarMax(cfg.min, cfg.max, cfg.step)
+        val curProg = GraphParamHelper.paramValueToProgress(cfg.value, seekBarMax, cfg.min, cfg.max)
+
+        val seekBar = SeekBar(context).apply {
+            tag = "seekBar"
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                setMargins((4 * dp).toInt(), 0, (4 * dp).toInt(), 0)
+            }
+            max = seekBarMax
+            progress = curProg
+            progressTintList = ColorStateList.valueOf(if (isDark) Color.parseColor("#38BDF8") else Color.parseColor("#0284C7"))
+            thumbTintList = ColorStateList.valueOf(if (isDark) Color.parseColor("#38BDF8") else Color.parseColor("#0284C7"))
+        }
+
+        seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar?, prog: Int, fromUser: Boolean) {
+                if (fromUser) {
+                    stopAnimation(param)
+                    val sbMax = sb?.max ?: 1000
+                    val newVal = GraphParamHelper.progressToParamValue(prog, sbMax, cfg.min, cfg.max, cfg.step)
+                    cfg.value = newVal
+                    paramValues[param] = newVal
+                    tvLabel.text = "$param = ${GraphParamHelper.formatParamNumber(newVal)}"
+                    plotAll(silent = true)
+                }
+            }
+            override fun onStartTrackingTouch(sb: SeekBar?) {
+                stopAnimation(param)
+            }
+            override fun onStopTrackingTouch(sb: SeekBar?) {}
+        })
+
+        val btnPlus = TextView(context).apply {
+            tag = "btnPlus"
+            layoutParams = LinearLayout.LayoutParams((28 * dp).toInt(), (28 * dp).toInt())
+            gravity = Gravity.CENTER
+            text = "+"
+            setTextColor(if (isDark) Color.parseColor("#F8FAFC") else Color.parseColor("#0F172A"))
+            textSize = 16f
+            setTypeface(typeface, Typeface.BOLD)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = 6f * dp
+                setColor(if (isDark) Color.parseColor("#1E293B") else Color.parseColor("#E2E8F0"))
+                setStroke((1f * dp).toInt(), if (isDark) Color.parseColor("#334155") else Color.parseColor("#CBD5E1"))
+            }
+            setOnClickListener {
+                onHaptic(it)
+                stopAnimation(param)
+                val newVal = GraphParamHelper.stepParamValue(cfg.value, 1, cfg.min, cfg.max, cfg.step)
+                cfg.value = newVal
+                paramValues[param] = newVal
+                updateParamRowUI(param)
+                plotAll(silent = true)
+            }
+        }
+
+        sliderRow.addView(btnMinus)
+        sliderRow.addView(seekBar)
+        sliderRow.addView(btnPlus)
+
+        cardView.addView(headerRow)
+        cardView.addView(sliderRow)
+
+        return cardView
+    }
+
+    fun showParamSettingsDialog(paramName: String) {
+        val cfg = paramConfigs[paramName] ?: return
+        val context = rootLayout.context
+        val isDark = ThemeManager.isDarkTheme(context)
+        val dp = context.resources.displayMetrics.density
+
+        val cardLayout = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((20 * dp).toInt(), (20 * dp).toInt(), (20 * dp).toInt(), (20 * dp).toInt())
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = 20f * dp
+                setColor(if (isDark) ThemeManager.COLOR_DARK_PANEL else ThemeManager.COLOR_LIGHT_PANEL)
+                setStroke((1.5f * dp).toInt(), if (isDark) ThemeManager.COLOR_DARK_BORDER else ThemeManager.COLOR_LIGHT_BORDER)
+            }
+        }
+
+        val tvTitle = TextView(context).apply {
+            text = "Настройки параметра $paramName"
+            setTextColor(if (isDark) ThemeManager.COLOR_DARK_TEXT_PRIMARY else ThemeManager.COLOR_LIGHT_TEXT_PRIMARY)
+            textSize = 16f
+            setTypeface(typeface, Typeface.BOLD)
+            setPadding(0, 0, 0, (14 * dp).toInt())
+        }
+        cardLayout.addView(tvTitle)
+
+        val tvMinLabel = TextView(context).apply {
+            text = "От (мин)"
+            setTextColor(if (isDark) ThemeManager.COLOR_DARK_TEXT_SECONDARY else ThemeManager.COLOR_LIGHT_TEXT_SECONDARY)
+            textSize = 12f
+            setTypeface(typeface, Typeface.BOLD)
+            setPadding(0, (4 * dp).toInt(), 0, (2 * dp).toInt())
+        }
+        val etMin = EditText(context).apply {
+            setText(GraphParamHelper.formatParamNumber(cfg.min))
+            setTextColor(if (isDark) ThemeManager.COLOR_DARK_TEXT_PRIMARY else ThemeManager.COLOR_LIGHT_TEXT_PRIMARY)
+            textSize = 14f
+            setSingleLine(true)
+            setPadding((10 * dp).toInt(), (8 * dp).toInt(), (10 * dp).toInt(), (8 * dp).toInt())
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = 8f * dp
+                setColor(if (isDark) ThemeManager.COLOR_DARK_INPUT else ThemeManager.COLOR_LIGHT_INPUT)
+                setStroke((1f * dp).toInt(), if (isDark) ThemeManager.COLOR_DARK_BORDER else ThemeManager.COLOR_LIGHT_BORDER)
+            }
+        }
+        cardLayout.addView(tvMinLabel)
+        cardLayout.addView(etMin)
+
+        val tvMaxLabel = TextView(context).apply {
+            text = "До (макс)"
+            setTextColor(if (isDark) ThemeManager.COLOR_DARK_TEXT_SECONDARY else ThemeManager.COLOR_LIGHT_TEXT_SECONDARY)
+            textSize = 12f
+            setTypeface(typeface, Typeface.BOLD)
+            setPadding(0, (8 * dp).toInt(), 0, (2 * dp).toInt())
+        }
+        val etMax = EditText(context).apply {
+            setText(GraphParamHelper.formatParamNumber(cfg.max))
+            setTextColor(if (isDark) ThemeManager.COLOR_DARK_TEXT_PRIMARY else ThemeManager.COLOR_LIGHT_TEXT_PRIMARY)
+            textSize = 14f
+            setSingleLine(true)
+            setPadding((10 * dp).toInt(), (8 * dp).toInt(), (10 * dp).toInt(), (8 * dp).toInt())
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = 8f * dp
+                setColor(if (isDark) ThemeManager.COLOR_DARK_INPUT else ThemeManager.COLOR_LIGHT_INPUT)
+                setStroke((1f * dp).toInt(), if (isDark) ThemeManager.COLOR_DARK_BORDER else ThemeManager.COLOR_LIGHT_BORDER)
+            }
+        }
+        cardLayout.addView(tvMaxLabel)
+        cardLayout.addView(etMax)
+
+        val tvStepLabel = TextView(context).apply {
+            text = "Шаг (0 — плавно)"
+            setTextColor(if (isDark) ThemeManager.COLOR_DARK_TEXT_SECONDARY else ThemeManager.COLOR_LIGHT_TEXT_SECONDARY)
+            textSize = 12f
+            setTypeface(typeface, Typeface.BOLD)
+            setPadding(0, (8 * dp).toInt(), 0, (2 * dp).toInt())
+        }
+        val etStep = EditText(context).apply {
+            setText(GraphParamHelper.formatParamNumber(cfg.step))
+            setTextColor(if (isDark) ThemeManager.COLOR_DARK_TEXT_PRIMARY else ThemeManager.COLOR_LIGHT_TEXT_PRIMARY)
+            textSize = 14f
+            setSingleLine(true)
+            setPadding((10 * dp).toInt(), (8 * dp).toInt(), (10 * dp).toInt(), (8 * dp).toInt())
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = 8f * dp
+                setColor(if (isDark) ThemeManager.COLOR_DARK_INPUT else ThemeManager.COLOR_LIGHT_INPUT)
+                setStroke((1f * dp).toInt(), if (isDark) ThemeManager.COLOR_DARK_BORDER else ThemeManager.COLOR_LIGHT_BORDER)
+            }
+        }
+        cardLayout.addView(tvStepLabel)
+        cardLayout.addView(etStep)
+
+        val presetScroll = HorizontalScrollView(context).apply {
+            overScrollMode = View.OVER_SCROLL_NEVER
+            isHorizontalScrollBarEnabled = false
+            setPadding(0, (8 * dp).toInt(), 0, (4 * dp).toInt())
+        }
+        val presetContainer = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+        val presets = listOf("0.01", "0.05", "0.1", "0.25", "0.5", "1", "π/4", "Плавно")
+        presets.forEach { preset ->
+            val chip = TextView(context).apply {
+                text = preset
+                textSize = 12f
+                setTypeface(typeface, Typeface.BOLD)
+                setTextColor(if (isDark) Color.parseColor("#38BDF8") else Color.parseColor("#0284C7"))
+                setPadding((10 * dp).toInt(), (4 * dp).toInt(), (10 * dp).toInt(), (4 * dp).toInt())
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    cornerRadius = 12f * dp
+                    setColor(if (isDark) Color.parseColor("#1E293B") else Color.parseColor("#E2E8F0"))
+                    setStroke((1f * dp).toInt(), if (isDark) Color.parseColor("#334155") else Color.parseColor("#CBD5E1"))
+                }
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    setMargins(0, 0, (6 * dp).toInt(), 0)
+                }
+
+                setOnClickListener {
+                    onHaptic(it)
+                    val strVal = if (preset == "Плавно") "0" else preset
+                    etStep.setText(strVal)
+                    etStep.setSelection(etStep.text.length)
+                }
+            }
+            presetContainer.addView(chip)
+        }
+        presetScroll.addView(presetContainer)
+        cardLayout.addView(presetScroll)
+
+        val tvError = TextView(context).apply {
+            setTextColor(Color.parseColor("#EF4444"))
+            textSize = 12f
+            setTypeface(typeface, Typeface.BOLD)
+            visibility = View.GONE
+            setPadding(0, (6 * dp).toInt(), 0, (6 * dp).toInt())
+        }
+        cardLayout.addView(tvError)
+
+        val btnRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END
+            setPadding(0, (12 * dp).toInt(), 0, 0)
+        }
+        val btnCancel = Button(context).apply {
+            text = "Отмена"
+            isAllCaps = false
+            setTextColor(if (isDark) ThemeManager.COLOR_DARK_TEXT_SECONDARY else ThemeManager.COLOR_LIGHT_TEXT_SECONDARY)
+            background = null
+        }
+        val btnApply = Button(context).apply {
+            text = "Применить"
+            isAllCaps = false
+            setTextColor(Color.WHITE)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = 8f * dp
+                setColor(if (isDark) Color.parseColor("#10B981") else Color.parseColor("#059669"))
+            }
+        }
+        btnRow.addView(btnCancel)
+        btnRow.addView(btnApply)
+        cardLayout.addView(btnRow)
+
+        val dialog = android.app.AlertDialog.Builder(context)
+            .setView(cardLayout)
+            .create()
+
+        dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+
+        btnCancel.setOnClickListener {
+            onHaptic(it)
+            dialog.dismiss()
+        }
+
+        btnApply.setOnClickListener {
+            onHaptic(it)
+            val pMin = GraphParamHelper.parseParamNumber(etMin.text.toString())
+            if (pMin == null) {
+                tvError.text = "Неверный формат мин. значения"
+                tvError.visibility = View.VISIBLE
+                return@setOnClickListener
+            }
+            val pMax = GraphParamHelper.parseParamNumber(etMax.text.toString())
+            if (pMax == null) {
+                tvError.text = "Неверный формат макс. значения"
+                tvError.visibility = View.VISIBLE
+                return@setOnClickListener
+            }
+            val pStep = GraphParamHelper.parseParamNumber(etStep.text.toString())
+            if (pStep == null || pStep < 0.0) {
+                tvError.text = "Шаг должен быть неотрицательным числом"
+                tvError.visibility = View.VISIBLE
+                return@setOnClickListener
+            }
+            if (pMin >= pMax) {
+                tvError.text = "Мин. значение должно быть меньше макс."
+                tvError.visibility = View.VISIBLE
+                return@setOnClickListener
+            }
+
+            tvError.visibility = View.GONE
+            cfg.min = pMin
+            cfg.max = pMax
+            cfg.step = pStep
+            cfg.value = GraphParamHelper.snapParamValue(cfg.value, cfg.min, cfg.max, cfg.step)
+            paramValues[paramName] = cfg.value
+
+            updateParamRowUI(paramName)
+            plotAll(silent = true)
+            dialog.dismiss()
+        }
+
+        dialog.show()
     }
 
     fun plotAll(silent: Boolean = true) {
@@ -722,12 +1351,14 @@ class GraphModeManager(
     }
 
     fun resetAll() {
+        stopAllAnimations()
         containerGraphSeriesList.removeAllViews()
         seriesList.clear()
         nextSeriesId = 1
         nextColorIndex = 0
         activeEditText = null
         activeSeriesItem = null
+        paramConfigs.clear()
         paramValues.clear()
         containerParameterSliders.removeAllViews()
         paramSliderViews.clear()

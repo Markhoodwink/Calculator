@@ -1,6 +1,7 @@
 package com.example.calculator
 
 import java.math.BigDecimal
+import java.math.BigInteger
 import java.math.RoundingMode
 import java.util.Locale
 import kotlin.math.abs
@@ -8,7 +9,8 @@ import kotlin.math.abs
 data class UnitItem(
     val id: String,
     val name: String,
-    val factorToBase: Double = 1.0
+    val factorToBase: Double = 1.0,
+    val base: Int = 10
 )
 
 data class PresetItem(
@@ -33,6 +35,32 @@ data class ConvertedUnitItem(
 class UnitConverterEngine {
 
     val categories: List<UnitCategory> = listOf(
+        // 0. Системы счисления
+        UnitCategory(
+            id = "numeral_systems",
+            name = "Системы счисления",
+            units = listOf(
+                UnitItem("bin", "Двоичная (2)", 1.0, 2),
+                UnitItem("oct", "Восьмеричная (8)", 1.0, 8),
+                UnitItem("dec", "Десятичная (10)", 1.0, 10),
+                UnitItem("hex", "Шестнадцатеричная (16)", 1.0, 16),
+                UnitItem("base3", "Троичная (3)", 1.0, 3),
+                UnitItem("base4", "Четверичная (4)", 1.0, 4),
+                UnitItem("base5", "Пятеричная (5)", 1.0, 5),
+                UnitItem("base6", "Шестеричная (6)", 1.0, 6),
+                UnitItem("base7", "Семеричная (7)", 1.0, 7),
+                UnitItem("base9", "Девятеричная (9)", 1.0, 9),
+                UnitItem("base12", "Двенадцатеричная (12)", 1.0, 12)
+            ),
+            presets = listOf(
+                PresetItem("10 → 2 (BIN)", "dec", "bin"),
+                PresetItem("10 → 16 (HEX)", "dec", "hex"),
+                PresetItem("16 → 10 (DEC)", "hex", "dec"),
+                PresetItem("2 → 16 (HEX)", "bin", "hex"),
+                PresetItem("10 → 8 (OCT)", "dec", "oct")
+            )
+        ),
+
         // 1. Длина
         UnitCategory(
             id = "length",
@@ -242,12 +270,140 @@ class UnitConverterEngine {
         return categories.find { it.id == categoryId }
     }
 
+    fun convertBase(input: String, fromBase: Int, toBase: Int, maxFractionDigits: Int = 12): String {
+        require(fromBase in 2..36) { "fromBase must be between 2 and 36" }
+        require(toBase in 2..36) { "toBase must be between 2 and 36" }
+
+        val rawTrimmed = input.trim()
+            .replace(',', '.')
+            .replace('−', '-')
+            .uppercase(Locale.US)
+
+        if (rawTrimmed.isEmpty() || rawTrimmed == "-") {
+            return ""
+        }
+
+        val isNegative = rawTrimmed.startsWith("-")
+        val positiveInput = if (isNegative) rawTrimmed.substring(1) else rawTrimmed
+
+        if (positiveInput.isEmpty() || positiveInput == ".") {
+            return ""
+        }
+
+        val parts = positiveInput.split('.')
+        if (parts.size > 2) {
+            throw IllegalArgumentException("Недопустимый символ для основания $fromBase")
+        }
+
+        val intPartStr = parts[0]
+        val fracPartStr = if (parts.size == 2) parts[1] else null
+
+        fun charToValue(c: Char): Int {
+            return when (c) {
+                in '0'..'9' -> c - '0'
+                in 'A'..'Z' -> c - 'A' + 10
+                else -> -1
+            }
+        }
+
+        for (c in intPartStr) {
+            val valDigit = charToValue(c)
+            if (valDigit < 0 || valDigit >= fromBase) {
+                throw IllegalArgumentException("Недопустимый символ для основания $fromBase")
+            }
+        }
+
+        if (fracPartStr != null) {
+            for (c in fracPartStr) {
+                val valDigit = charToValue(c)
+                if (valDigit < 0 || valDigit >= fromBase) {
+                    throw IllegalArgumentException("Недопустимый символ для основания $fromBase")
+                }
+            }
+        }
+
+        val intPartBig = if (intPartStr.isEmpty()) {
+            BigInteger.ZERO
+        } else {
+            BigInteger(intPartStr, fromBase)
+        }
+        val intPartConverted = intPartBig.toString(toBase).uppercase(Locale.US)
+
+        var fracPartConverted = ""
+        if (fracPartStr != null && fracPartStr.isNotEmpty()) {
+            val fromBaseBig = BigInteger.valueOf(fromBase.toLong())
+            var num = BigInteger.ZERO
+            for (c in fracPartStr) {
+                val d = charToValue(c)
+                num = num.multiply(fromBaseBig).add(BigInteger.valueOf(d.toLong()))
+            }
+            val den = fromBaseBig.pow(fracPartStr.length)
+
+            if (num > BigInteger.ZERO) {
+                val toBaseBig = BigInteger.valueOf(toBase.toLong())
+                val sb = StringBuilder()
+                while (num > BigInteger.ZERO && sb.length < maxFractionDigits) {
+                    num = num.multiply(toBaseBig)
+                    val qr = num.divideAndRemainder(den)
+                    val q = qr[0].toInt()
+                    num = qr[1]
+
+                    val digitChar = if (q < 10) ('0' + q) else ('A' + (q - 10))
+                    sb.append(digitChar)
+                }
+                var endIdx = sb.length
+                while (endIdx > 0 && sb[endIdx - 1] == '0') {
+                    endIdx--
+                }
+                fracPartConverted = sb.substring(0, endIdx)
+            }
+        }
+
+        val rawResult = if (fracPartConverted.isNotEmpty()) {
+            "$intPartConverted.$fracPartConverted"
+        } else if (positiveInput.endsWith(".") && parts.size == 2 && parts[1].isEmpty()) {
+            "$intPartConverted."
+        } else {
+            intPartConverted
+        }
+
+        val isZeroResult = rawResult == "0" || rawResult == "0."
+        return if (isNegative && !isZeroResult) "-$rawResult" else rawResult
+    }
+
+    fun convertAllBase(input: String, fromUnitId: String): List<ConvertedUnitItem> {
+        val cat = getCategory("numeral_systems") ?: return emptyList()
+        val fromUnit = cat.units.find { it.id == fromUnitId } ?: cat.units.first()
+        return cat.units.map { unit ->
+            val formatted = try {
+                convertBase(input, fromUnit.base, unit.base)
+            } catch (_: IllegalArgumentException) {
+                "Символы вне основания ${fromUnit.base}"
+            }
+            ConvertedUnitItem(
+                unit = unit,
+                rawValue = 0.0,
+                formattedValue = formatted
+            )
+        }
+    }
+
     fun convert(value: Double, fromUnitId: String, toUnitId: String, categoryId: String): Double {
         if (value.isNaN() || value.isInfinite()) return value
         val cat = getCategory(categoryId) ?: return value
         if (fromUnitId == toUnitId) return value
 
-        if (cat.id == "temperature") {
+        if (cat.id == "numeral_systems") {
+            val fromUnit = cat.units.find { it.id == fromUnitId } ?: cat.units.first()
+            val toUnit = cat.units.find { it.id == toUnitId } ?: cat.units.first()
+            val inputStr = if (value % 1.0 == 0.0) value.toLong().toString() else value.toString()
+            val resStr = try {
+                convertBase(inputStr, fromUnit.base, toUnit.base)
+            } catch (_: Exception) {
+                "0"
+            }
+            return resStr.toDoubleOrNull() ?: 0.0
+        } else if (cat.id == "temperature") {
             // Affine conversions
             val celsius = when (fromUnitId) {
                 "celsius" -> value
@@ -272,6 +428,22 @@ class UnitConverterEngine {
 
     fun convertAll(value: Double, fromUnitId: String, categoryId: String): List<ConvertedUnitItem> {
         val cat = getCategory(categoryId) ?: return emptyList()
+        if (cat.id == "numeral_systems") {
+            val fromUnit = cat.units.find { it.id == fromUnitId } ?: cat.units.first()
+            val inputStr = if (value % 1.0 == 0.0) value.toLong().toString() else value.toString()
+            return cat.units.map { unit ->
+                val formatted = try {
+                    convertBase(inputStr, fromUnit.base, unit.base)
+                } catch (_: Exception) {
+                    "0"
+                }
+                ConvertedUnitItem(
+                    unit = unit,
+                    rawValue = formatted.toDoubleOrNull() ?: 0.0,
+                    formattedValue = formatted
+                )
+            }
+        }
         return cat.units.map { unit ->
             val raw = convert(value, fromUnitId, unit.id, categoryId)
             ConvertedUnitItem(

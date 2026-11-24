@@ -354,7 +354,9 @@ class MainActivity : AppCompatActivity() {
         initModeHub()
         initTheme()
 
-        UpdateChecker.checkForUpdateAsync(this)
+        if (BuildConfig.ENABLE_GITHUB_UPDATER) {
+            UpdateChecker.checkForUpdateAsync(this)
+        }
     }
 
     private fun openTargetModeWithFormula(target: ScanTarget, casExpr: String) {
@@ -703,6 +705,48 @@ class MainActivity : AppCompatActivity() {
         btn.bindCrispKey(isHeavy) { action() }
     }
 
+    private fun canContinueWithAns(): Boolean {
+        if (!casioDisplay.hasResult) return false
+        if (casEngine.lastAnswer.isBlank()) return false
+        val resText = casioDisplay.getResultText().trim()
+        if (resText.startsWith("Ошибка") ||
+            resText.startsWith("Error") ||
+            resText.startsWith("Не удалось") ||
+            resText.startsWith("Нет ") ||
+            resText.startsWith("Переменная")
+        ) return false
+
+        if (resText.contains(";") ||
+            resText.contains("∈") ||
+            resText.contains("=") ||
+            resText.contains("NaN") ||
+            resText.contains("Infinity")
+        ) return false
+
+        return true
+    }
+
+    private fun prepareForOperatorInput() {
+        if (casioDisplay.hasResult) {
+            if (canContinueWithAns()) {
+                casioDisplay.clearAll()
+                casioDisplay.insertText("Ans")
+            } else {
+                casioDisplay.clearResult()
+            }
+        } else {
+            if (casioDisplay.rootContainer.isEmpty()) {
+                casioDisplay.insertText("Ans")
+            }
+        }
+    }
+
+    private fun prepareForFreshInput() {
+        if (casioDisplay.hasResult) {
+            casioDisplay.clearAll()
+        }
+    }
+
     private fun initKeypad() {
         setupDualFunctionButtons(ThemeManager.isDarkTheme(this))
 
@@ -713,36 +757,38 @@ class MainActivity : AppCompatActivity() {
             R.id.btn9 to "9", R.id.btnDot to "."
         )
         digitMap.forEach { (id, text) ->
-            bindKey(id) { casioDisplay.insertText(text) }
-        }
-
-        // Авто-подстановка Ans: если дисплей пуст, подставляем "Ans" перед оператором
-        val ensureAnsIfEmpty = {
-            if (casioDisplay.rootContainer.isEmpty()) {
-                casioDisplay.insertText("Ans")
+            bindKey(id) {
+                prepareForFreshInput()
+                casioDisplay.insertText(text)
             }
         }
 
         bindKey(R.id.btnAdd) {
-            ensureAnsIfEmpty()
+            prepareForOperatorInput()
             casioDisplay.insertText(" + ")
         }
         bindKey(R.id.btnSub) {
-            ensureAnsIfEmpty()
+            prepareForOperatorInput()
             casioDisplay.insertText(" - ")
         }
         bindKey(R.id.btnMul) {
-            ensureAnsIfEmpty()
+            prepareForOperatorInput()
             casioDisplay.insertText(" · ")
         }
         bindKey(R.id.btnDiv) {
-            ensureAnsIfEmpty()
+            prepareForOperatorInput()
             casioDisplay.insertText(" ÷ ")
         }
-        bindKey(R.id.btnEqualsSign) { casioDisplay.insertText(" = ") }
+        bindKey(R.id.btnEqualsSign) {
+            if (casioDisplay.hasResult) {
+                casioDisplay.clearResult()
+            }
+            casioDisplay.insertText(" = ")
+        }
 
         // Кнопка переменной Ans
         bindKey(R.id.btnAns) {
+            prepareForFreshInput()
             casioDisplay.insertText("Ans")
         }
 
@@ -758,6 +804,7 @@ class MainActivity : AppCompatActivity() {
 
         // ── Тригонометрия и функции (с учётом SHIFT) ─────────────────────────
         bindKey(R.id.btnSin) {
+            prepareForFreshInput()
             if (isShiftActive) {
                 casioDisplay.insertText("asin(")
                 resetShift()
@@ -766,6 +813,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
         bindKey(R.id.btnCos) {
+            prepareForFreshInput()
             if (isShiftActive) {
                 casioDisplay.insertText("acos(")
                 resetShift()
@@ -774,6 +822,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
         bindKey(R.id.btnTan) {
+            prepareForFreshInput()
             if (isShiftActive) {
                 casioDisplay.insertText("atan(")
                 resetShift()
@@ -782,6 +831,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
         bindKey(R.id.btnLn) {
+            prepareForFreshInput()
             if (isShiftActive) {
                 casioDisplay.insertText("e^(")
                 resetShift()
@@ -790,6 +840,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
         bindKey(R.id.btnLog) {
+            prepareForFreshInput()
             if (isShiftActive) {
                 casioDisplay.insertText("10^(")
                 resetShift()
@@ -798,6 +849,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
         bindKey(R.id.btnSqrt) {
+            prepareForFreshInput()
             if (isShiftActive) {
                 casioDisplay.insertCbrt()
                 resetShift()
@@ -806,7 +858,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
         bindKey(R.id.btnSquare) {
-            ensureAnsIfEmpty()
+            prepareForOperatorInput()
             if (isShiftActive) {
                 casioDisplay.insertSuperscript("3")
                 resetShift()
@@ -817,7 +869,7 @@ class MainActivity : AppCompatActivity() {
         // ─────────────────────────────────────────────────────────────────────
 
         bindKey(R.id.btnPow) {
-            ensureAnsIfEmpty()
+            prepareForOperatorInput()
             if (isShiftActive) {
                 casioDisplay.insertSuperscript("-1")
                 resetShift()
@@ -831,21 +883,24 @@ class MainActivity : AppCompatActivity() {
                 resetShift()
                 showConstantsBottomSheet()
             } else {
+                prepareForFreshInput()
                 casioDisplay.insertText("π")
             }
         }
 
         bindKey(R.id.btnOpenBracket) {
             if (isShiftActive) {
-                ensureAnsIfEmpty()
+                prepareForOperatorInput()
                 casioDisplay.insertText("!")
                 resetShift()
             } else {
+                prepareForFreshInput()
                 casioDisplay.insertText("(")
             }
         }
 
         bindKey(R.id.btnCloseBracket) {
+            prepareForFreshInput()
             if (isShiftActive) {
                 casioDisplay.insertText("|")
                 casioDisplay.insertText("|")
@@ -856,6 +911,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
         bindKey(R.id.btnFraction) {
+            prepareForFreshInput()
             if (isShiftActive) {
                 casioDisplay.insertMixedFraction()
                 resetShift()
@@ -871,10 +927,14 @@ class MainActivity : AppCompatActivity() {
             R.id.btnVarT to "t"
         )
         varMap.forEach { (id, v) ->
-            bindKey(id) { casioDisplay.insertText(v) }
+            bindKey(id) {
+                prepareForFreshInput()
+                casioDisplay.insertText(v)
+            }
         }
 
         bindKey(R.id.btnVarV) {
+            prepareForFreshInput()
             if (isShiftActive) {
                 casioDisplay.insertCombinatorics("A")
                 resetShift()
@@ -900,6 +960,7 @@ class MainActivity : AppCompatActivity() {
 
         val btnDel = findViewById<View>(R.id.btnDel)
         btnDel?.bindRepeatingCrispKey(isHeavy = true) {
+            if (casioDisplay.hasResult) casioDisplay.clearResult()
             val rawBefore = casioDisplay.getRawExpression()
             val containerBefore = casioDisplay.currentContainer
             val cursorBefore = casioDisplay.cursorIndex
@@ -1004,6 +1065,7 @@ class MainActivity : AppCompatActivity() {
     private fun initNavigationPad() {
         val btnLeft = findViewById<View>(R.id.btnArrowLeft)
         btnLeft?.bindRepeatingCrispKey(isHeavy = false) {
+            if (casioDisplay.hasResult) casioDisplay.clearResult()
             val containerBefore = casioDisplay.currentContainer
             val cursorBefore = casioDisplay.cursorIndex
             casioDisplay.moveLeft()
@@ -1014,6 +1076,7 @@ class MainActivity : AppCompatActivity() {
 
         val btnRight = findViewById<View>(R.id.btnArrowRight)
         btnRight?.bindRepeatingCrispKey(isHeavy = false) {
+            if (casioDisplay.hasResult) casioDisplay.clearResult()
             val containerBefore = casioDisplay.currentContainer
             val cursorBefore = casioDisplay.cursorIndex
             casioDisplay.moveRight()
@@ -1022,8 +1085,14 @@ class MainActivity : AppCompatActivity() {
             (containerBefore !== containerAfter) || (cursorBefore != cursorAfter)
         }
 
-        bindKey(R.id.btnArrowUp) { casioDisplay.jumpUp() }
-        bindKey(R.id.btnArrowDown) { casioDisplay.jumpDown() }
+        bindKey(R.id.btnArrowUp) {
+            if (casioDisplay.hasResult) casioDisplay.clearResult()
+            casioDisplay.jumpUp()
+        }
+        bindKey(R.id.btnArrowDown) {
+            if (casioDisplay.hasResult) casioDisplay.clearResult()
+            casioDisplay.jumpDown()
+        }
     }
 
     private fun updateStepsButtonVisibility(res: CasEngine.SolveResult) {
@@ -1384,6 +1453,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun showConstantsBottomSheet() {
         val bottomSheet = ConstantsBottomSheet { constantValue ->
+            prepareForFreshInput()
             casioDisplay.insertText(constantValue)
             Toast.makeText(this, "Константа вставлена: $constantValue", Toast.LENGTH_SHORT).show()
         }

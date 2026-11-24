@@ -98,4 +98,39 @@ class DesmosPlotCompilerTest {
         val fn2 = (p2 as CompiledPlot.ExplicitY).fn
         assertEquals(9.0, fn2(3.0), 1e-6)
     }
+
+    @Test
+    fun testParseParamNumber() {
+        assertEquals(0.05, GraphParamHelper.parseParamNumber("0.05")!!, 1e-6)
+        assertEquals(0.25, GraphParamHelper.parseParamNumber("0,25")!!, 1e-6)
+        assertEquals(0.25, GraphParamHelper.parseParamNumber("1/4")!!, 1e-6)
+        assertEquals(Math.PI / 4, GraphParamHelper.parseParamNumber("π/4")!!, 1e-6)
+        assertEquals(-2 * Math.PI, GraphParamHelper.parseParamNumber("-2π")!!, 1e-6)
+        assertNull(GraphParamHelper.parseParamNumber("abc"))
+    }
+
+    @Test
+    fun testSnapParamValue() {
+        assertEquals(0.3, GraphParamHelper.snapParamValue(0.30000000000000004, -10.0, 10.0, 0.1), 1e-6)
+        assertEquals(1.25, GraphParamHelper.snapParamValue(1.37, -10.0, 10.0, 0.25), 1e-6)
+        assertEquals(1.5, GraphParamHelper.snapParamValue(1.38, -10.0, 10.0, 0.25), 1e-6)
+        assertEquals(1.2345, GraphParamHelper.snapParamValue(1.2345, -10.0, 10.0, 0.0), 1e-6)
+        assertEquals(5.0, GraphParamHelper.snapParamValue(15.0, -5.0, 5.0, 0.5), 1e-6)
+    }
+
+    @Test
+    fun testStepParamValue() {
+        assertEquals(1.05, GraphParamHelper.stepParamValue(1.0, 1, -10.0, 10.0, 0.05), 1e-6)
+        assertEquals(10.0, GraphParamHelper.stepParamValue(10.0, 1, -10.0, 10.0, 0.1), 1e-6)
+    }
+
+    @Test
+    fun testComputeSeekBarMaxAndProgressRoundTrip() {
+        val maxSb = GraphParamHelper.computeSeekBarMax(-5.0, 5.0, 0.25)
+        assertEquals(40, maxSb)
+        val valAt21 = GraphParamHelper.progressToParamValue(21, maxSb, -5.0, 5.0, 0.25)
+        assertEquals(0.25, valAt21, 1e-6)
+        val progFor025 = GraphParamHelper.paramValueToProgress(valAt21, maxSb, -5.0, 5.0)
+        assertEquals(21, progFor025)
+    }
 }

@@ -2616,6 +2616,9 @@ class CasioDisplayView @JvmOverloads constructor(
                 parent?.requestDisallowInterceptTouchEvent(false)
                 if (!isHorizontalDragging && !isVerticalSwiping) {
                     if (event.y < getResultBoundaryY()) {
+                        if (_hasResult) {
+                            clearResult()
+                        }
                         val totalM = measureContainer(rootContainer)
                         val inputBaselineY = if (isCompactInputMode && !hasResult && !hasPreview) {
                             val centeredY = (height.toFloat() + totalM.ascent - totalM.descent) / 2f

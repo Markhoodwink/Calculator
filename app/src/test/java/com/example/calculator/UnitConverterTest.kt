@@ -9,6 +9,44 @@ class UnitConverterTest {
     private val engine = UnitConverterEngine()
 
     @Test
+    fun testCategoryOrderAndCount() {
+        assertEquals(11, engine.categories.size)
+        assertEquals("numeral_systems", engine.categories[0].id)
+        assertEquals("Системы счисления", engine.categories[0].name)
+        assertEquals("length", engine.categories[1].id)
+        assertEquals("Длина", engine.categories[1].name)
+    }
+
+    @Test
+    fun testIntegerBaseConversions() {
+        assertEquals("101010", engine.convertBase("42", 10, 2))
+        assertEquals("FF", engine.convertBase("255", 10, 16))
+        assertEquals("377", engine.convertBase("FF", 16, 8))
+        assertEquals("45", engine.convertBase("101101", 2, 10))
+        assertEquals("86A", engine.convertBase("1234", 10, 12))
+        assertEquals("10201", engine.convertBase("100", 10, 3))
+    }
+
+    @Test
+    fun testLargeBigIntegerConversion() {
+        val input = "18446744073709551615"
+        assertEquals("FFFFFFFFFFFFFFFF", engine.convertBase(input, 10, 16))
+        assertEquals("1111111111111111111111111111111111111111111111111111111111111111", engine.convertBase(input, 10, 2))
+    }
+
+    @Test
+    fun testFractionalAndNegativeConversions() {
+        assertEquals("1010.101", engine.convertBase("10.625", 10, 2))
+        assertEquals("-FF", engine.convertBase("-255", 10, 16))
+        assertEquals("0.5", engine.convertBase("0.8", 16, 10))
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun testInvalidDigitGuard() {
+        engine.convertBase("102", 2, 10)
+    }
+
+    @Test
     fun testKmToMiles() {
         val result = engine.convert(10.0, "km", "mi", "length")
         assertEquals(6.213712, result, 0.0001)
@@ -52,7 +90,7 @@ class UnitConverterTest {
 
     @Test
     fun testConvertAllCategories() {
-        assertEquals(10, engine.categories.size)
+        assertEquals(11, engine.categories.size)
         engine.categories.forEach { cat ->
             val all = engine.convertAll(1.0, cat.units.first().id, cat.id)
             assertEquals(cat.units.size, all.size)

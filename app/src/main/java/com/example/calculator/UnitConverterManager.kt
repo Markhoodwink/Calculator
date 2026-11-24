@@ -50,20 +50,21 @@ class UnitConverterManager(
     val tvToValue: TextView = rootLayout.findViewById(R.id.tvToValue)
     val containerAllConversions: LinearLayout = rootLayout.findViewById(R.id.containerAllConversions)
     val layoutConverterKeypad: LinearLayout = rootLayout.findViewById(R.id.layoutConverterKeypad)
+    val layoutConverterHexRow: View? = rootLayout.findViewById(R.id.layoutConverterHexRow)
 
-    private var currentCategoryId: String = "length"
-    private var fromUnitId: String = "m"
-    private var toUnitId: String = "cm"
-    private var inputValue: String = "1"
+    private var currentCategoryId: String = "numeral_systems"
+    private var fromUnitId: String = "dec"
+    private var toUnitId: String = "bin"
+    private var inputValue: String = "42"
 
     init {
         setupListeners()
-        selectCategory("length")
+        selectCategory("numeral_systems")
     }
 
     private fun setupListeners() {
         btnConverterClear?.bindCrispKey(isHeavy = true) {
-            inputValue = "1"
+            inputValue = if (currentCategoryId == "numeral_systems") "42" else "1"
             recalculate()
         }
 
@@ -89,20 +90,33 @@ class UnitConverterManager(
         }
 
         btnSendToCalc.bindCrispKey(isHeavy = true) {
-            onSendToCalculator(tvToValue.text.toString())
+            val text = tvToValue.text.toString()
+            if (!text.startsWith("Символы")) {
+                onSendToCalculator(text)
+            }
         }
 
         // Numpad button bindings
         val numpadMap = mapOf(
             R.id.btnConv7 to "7", R.id.btnConv8 to "8", R.id.btnConv9 to "9", R.id.btnConvDel to "⌫",
-            R.id.btnConv4 to "4", R.id.btnConv5 to "5", R.id.btnConv6 to "6", R.id.btnConvClear to "C",
+            R.id.btnConv4 to "4", R.id.btnConv5 to "5", R.id.btnConv6 to "6", R.id.btnConvClear to "CLEAR",
             R.id.btnConv1 to "1", R.id.btnConv2 to "2", R.id.btnConv3 to "3", R.id.btnConvSign to "±",
             R.id.btnConv0 to "0", R.id.btnConvDot to ".", R.id.btnConv00 to "00", R.id.btnConvTripleZero to "000"
         )
 
         numpadMap.forEach { (id, key) ->
-            val isHeavy = (key == "⌫" || key == "C")
+            val isHeavy = (key == "⌫" || key == "CLEAR")
             rootLayout.findViewById<Button>(id)?.bindCrispKey(isHeavy = isHeavy) {
+                onNumpadKey(key)
+            }
+        }
+
+        val hexMap = mapOf(
+            R.id.btnConvHexA to "A", R.id.btnConvHexB to "B", R.id.btnConvHexC to "C",
+            R.id.btnConvHexD to "D", R.id.btnConvHexE to "E", R.id.btnConvHexF to "F"
+        )
+        hexMap.forEach { (id, key) ->
+            rootLayout.findViewById<Button>(id)?.bindCrispKey(isHeavy = false) {
                 onNumpadKey(key)
             }
         }
@@ -113,12 +127,18 @@ class UnitConverterManager(
         currentCategoryId = categoryId
 
         // Default units for category
-        if (cat.units.size >= 2) {
+        if (cat.id == "numeral_systems") {
+            fromUnitId = "dec"
+            toUnitId = "bin"
+            inputValue = "42"
+        } else if (cat.units.size >= 2) {
             fromUnitId = cat.units.find { it.id == "m" || it.id == "kg" || it.id == "liter" || it.id == "kmh" || it.id == "celsius" || it.id == "pa" || it.id == "j" || it.id == "min" || it.id == "mib" }?.id ?: cat.units[0].id
             toUnitId = cat.units.find { it.id != fromUnitId }?.id ?: cat.units[1].id
+            inputValue = "1"
         } else if (cat.units.isNotEmpty()) {
             fromUnitId = cat.units[0].id
             toUnitId = cat.units[0].id
+            inputValue = "1"
         }
 
         tvSelectedCategory.text = cat.name
@@ -325,6 +345,7 @@ class UnitConverterManager(
 
     private fun getCategoryBadge(categoryId: String): String {
         return when (categoryId) {
+            "numeral_systems" -> "🔢"
             "length" -> "📏"
             "area" -> "⬜"
             "volume" -> "🧊"
@@ -341,6 +362,7 @@ class UnitConverterManager(
 
     private fun getCategoryUnitPreview(categoryId: String): String {
         return when (categoryId) {
+            "numeral_systems" -> "BIN (2), OCT (8), DEC (10), HEX (16), 3–12"
             "length" -> "мм, см, дм, м, км, дюйм, фут, миля"
             "area" -> "мм², см², дм², м², сотка, га, км², фут²"
             "volume" -> "мл, литр, м³, стакан, галлон, баррель"
@@ -418,6 +440,12 @@ class UnitConverterManager(
         val tmp = fromUnitId
         fromUnitId = toUnitId
         toUnitId = tmp
+        if (currentCategoryId == "numeral_systems") {
+            val converted = tvToValue.text.toString()
+            if (converted.isNotEmpty() && !converted.startsWith("Символы")) {
+                inputValue = converted
+            }
+        }
         recalculate()
     }
 
@@ -428,17 +456,26 @@ class UnitConverterManager(
                     inputValue = key
                 } else if (inputValue == "-0") {
                     inputValue = "-$key"
-                } else if (inputValue.length < 15) {
+                } else if (inputValue.length < 32) {
+                    inputValue += key
+                }
+            }
+            "A", "B", "C", "D", "E", "F" -> {
+                if (inputValue == "0") {
+                    inputValue = key
+                } else if (inputValue == "-0") {
+                    inputValue = "-$key"
+                } else if (inputValue.length < 32) {
                     inputValue += key
                 }
             }
             "00" -> {
-                if (inputValue != "0" && inputValue != "-0" && inputValue.length <= 13) {
+                if (inputValue != "0" && inputValue != "-0" && inputValue.length <= 30) {
                     inputValue += "00"
                 }
             }
             "000" -> {
-                if (inputValue != "0" && inputValue != "-0" && inputValue.length <= 12) {
+                if (inputValue != "0" && inputValue != "-0" && inputValue.length <= 29) {
                     inputValue += "000"
                 }
             }
@@ -460,14 +497,63 @@ class UnitConverterManager(
                     inputValue = "0"
                 }
             }
-            "C" -> {
+            "CLEAR" -> {
                 inputValue = "0"
             }
         }
         recalculate()
     }
 
+    private fun updateKeypadForCurrentCategory() {
+        val cat = engine.getCategory(currentCategoryId)
+        if (cat?.id == "numeral_systems") {
+            layoutConverterHexRow?.visibility = View.VISIBLE
+            val fromUnit = cat.units.find { it.id == fromUnitId } ?: cat.units.first()
+            val fromBase = fromUnit.base
+
+            val digitButtons = mapOf(
+                R.id.btnConv0 to 0, R.id.btnConv1 to 1, R.id.btnConv2 to 2, R.id.btnConv3 to 3,
+                R.id.btnConv4 to 4, R.id.btnConv5 to 5, R.id.btnConv6 to 6, R.id.btnConv7 to 7,
+                R.id.btnConv8 to 8, R.id.btnConv9 to 9,
+                R.id.btnConvHexA to 10, R.id.btnConvHexB to 11, R.id.btnConvHexC to 12,
+                R.id.btnConvHexD to 13, R.id.btnConvHexE to 14, R.id.btnConvHexF to 15
+            )
+
+            digitButtons.forEach { (id, value) ->
+                rootLayout.findViewById<View>(id)?.let { btn ->
+                    val valid = value < fromBase
+                    btn.isEnabled = valid
+                    btn.alpha = if (valid) 1.0f else 0.30f
+                }
+            }
+
+            rootLayout.findViewById<View>(R.id.btnConvDot)?.apply { isEnabled = true; alpha = 1.0f }
+            rootLayout.findViewById<View>(R.id.btnConvSign)?.apply { isEnabled = true; alpha = 1.0f }
+            rootLayout.findViewById<View>(R.id.btnConvDel)?.apply { isEnabled = true; alpha = 1.0f }
+            rootLayout.findViewById<View>(R.id.btnConvClear)?.apply { isEnabled = true; alpha = 1.0f }
+            rootLayout.findViewById<View>(R.id.btnConv00)?.apply { isEnabled = true; alpha = 1.0f }
+            rootLayout.findViewById<View>(R.id.btnConvTripleZero)?.apply { isEnabled = true; alpha = 1.0f }
+        } else {
+            layoutConverterHexRow?.visibility = View.GONE
+
+            val allButtons = listOf(
+                R.id.btnConv0, R.id.btnConv1, R.id.btnConv2, R.id.btnConv3, R.id.btnConv4,
+                R.id.btnConv5, R.id.btnConv6, R.id.btnConv7, R.id.btnConv8, R.id.btnConv9,
+                R.id.btnConvDot, R.id.btnConvSign, R.id.btnConvDel, R.id.btnConvClear,
+                R.id.btnConv00, R.id.btnConvTripleZero
+            )
+            allButtons.forEach { id ->
+                rootLayout.findViewById<View>(id)?.let { btn ->
+                    btn.isEnabled = true
+                    btn.alpha = 1.0f
+                }
+            }
+        }
+    }
+
     fun recalculate() {
+        updateKeypadForCurrentCategory()
+
         val cat = engine.getCategory(currentCategoryId) ?: return
         val fromUnit = cat.units.find { it.id == fromUnitId } ?: cat.units.firstOrNull()
         val toUnit = cat.units.find { it.id == toUnitId } ?: cat.units.getOrNull(1) ?: fromUnit
@@ -479,11 +565,107 @@ class UnitConverterManager(
         btnToUnit.text = "${toUnit?.name ?: ""} ▾"
         tvFromValue.text = inputValue
 
-        val valDouble = inputValue.toDoubleOrNull() ?: 0.0
-        val result = engine.convert(valDouble, fromUnitId, toUnitId, currentCategoryId)
-        tvToValue.text = engine.formatValue(result)
+        if (currentCategoryId == "numeral_systems" && fromUnit != null && toUnit != null) {
+            val result = try {
+                engine.convertBase(inputValue, fromUnit.base, toUnit.base)
+            } catch (_: IllegalArgumentException) {
+                "Символы вне основания ${fromUnit.base}"
+            }
+            tvToValue.text = result
+            rebuildAllConversionsListBase(inputValue)
+        } else {
+            val valDouble = inputValue.toDoubleOrNull() ?: 0.0
+            val result = engine.convert(valDouble, fromUnitId, toUnitId, currentCategoryId)
+            tvToValue.text = engine.formatValue(result)
+            rebuildAllConversionsList(valDouble)
+        }
+    }
 
-        rebuildAllConversionsList(valDouble)
+    private fun rebuildAllConversionsListBase(input: String) {
+        containerAllConversions.removeAllViews()
+        val cat = engine.getCategory("numeral_systems") ?: return
+        val dp = rootLayout.resources.displayMetrics.density
+        val isDark = ThemeManager.isDarkTheme(rootLayout.context)
+
+        val all = engine.convertAllBase(input, fromUnitId)
+
+        val headerTv = TextView(rootLayout.context).apply {
+            text = "Все единицы категории (${cat.name}):"
+            textSize = 12f
+            setPadding(0, (4 * dp).toInt(), 0, (6 * dp).toInt())
+            setTextColor(if (isDark) ThemeManager.COLOR_DARK_TEXT_SECONDARY else ThemeManager.COLOR_LIGHT_TEXT_SECONDARY)
+        }
+        containerAllConversions.addView(headerTv)
+
+        all.forEach { item ->
+            val isTarget = item.unit.id == toUnitId
+            val isSource = item.unit.id == fromUnitId
+
+            val row = LinearLayout(rootLayout.context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding((12 * dp).toInt(), (8 * dp).toInt(), (12 * dp).toInt(), (8 * dp).toInt())
+                isClickable = true
+                isFocusable = true
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    setMargins(0, 0, 0, (6 * dp).toInt())
+                }
+
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    cornerRadius = 10f * dp
+                    if (isTarget) {
+                        setColor(if (isDark) Color.parseColor("#064E3B") else Color.parseColor("#ECFDF5"))
+                        setStroke((1.5f * dp).toInt(), Color.parseColor("#10B981"))
+                    } else {
+                        setColor(if (isDark) ThemeManager.COLOR_DARK_PANEL else ThemeManager.COLOR_LIGHT_PANEL)
+                        setStroke((1 * dp).toInt(), if (isDark) ThemeManager.COLOR_DARK_BORDER else ThemeManager.COLOR_LIGHT_BORDER)
+                    }
+                }
+
+                bindCrispKey(isHeavy = false) {
+                    toUnitId = item.unit.id
+                    copyToClipboard(item.formattedValue)
+                    Toast.makeText(rootLayout.context, "Скопировано: ${item.formattedValue} ${item.unit.name}", Toast.LENGTH_SHORT).show()
+                    recalculate()
+                }
+            }
+
+            val displayName = if (isSource) "${item.unit.name} (исх.)" else item.unit.name
+
+            val tvName = TextView(rootLayout.context).apply {
+                text = displayName
+                textSize = 13f
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                setTextColor(
+                    if (isTarget) (if (isDark) Color.parseColor("#10B981") else Color.parseColor("#059669"))
+                    else if (isSource) (if (isDark) Color.parseColor("#38BDF8") else Color.parseColor("#0284C7"))
+                    else if (isDark) ThemeManager.COLOR_DARK_TEXT_PRIMARY
+                    else ThemeManager.COLOR_LIGHT_TEXT_PRIMARY
+                )
+                if (isTarget || isSource) {
+                    setTypeface(typeface, Typeface.BOLD)
+                }
+            }
+
+            val tvVal = TextView(rootLayout.context).apply {
+                text = item.formattedValue
+                textSize = 14f
+                setTypeface(typeface, Typeface.BOLD)
+                setTextColor(
+                    if (isTarget) (if (isDark) Color.parseColor("#10B981") else Color.parseColor("#059669"))
+                    else if (isDark) ThemeManager.COLOR_DARK_TEXT_PRIMARY
+                    else ThemeManager.COLOR_LIGHT_TEXT_PRIMARY
+                )
+            }
+
+            row.addView(tvName)
+            row.addView(tvVal)
+            containerAllConversions.addView(row)
+        }
     }
 
     private fun rebuildAllConversionsList(value: Double) {
@@ -689,6 +871,21 @@ class UnitConverterManager(
                 btn.strokeWidth = (1 * dp).toInt()
                 btn.setTextColor(if (isDark) Color.parseColor("#CBD5E1") else Color.parseColor("#334155"))
                 btn.textSize = 15f
+                btn.setTypeface(btn.typeface, Typeface.BOLD)
+            }
+        }
+
+        val hexButtons = listOf(
+            R.id.btnConvHexA, R.id.btnConvHexB, R.id.btnConvHexC,
+            R.id.btnConvHexD, R.id.btnConvHexE, R.id.btnConvHexF
+        )
+        hexButtons.forEach { id ->
+            (rootLayout.findViewById<View>(id) as? MaterialButton)?.let { btn ->
+                btn.backgroundTintList = ColorStateList.valueOf(secBg)
+                btn.strokeColor = ColorStateList.valueOf(secStroke)
+                btn.strokeWidth = (1 * dp).toInt()
+                btn.setTextColor(if (isDark) Color.parseColor("#38BDF8") else Color.parseColor("#0284C7"))
+                btn.textSize = 17f
                 btn.setTypeface(btn.typeface, Typeface.BOLD)
             }
         }

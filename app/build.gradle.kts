@@ -1,19 +1,60 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
 }
+
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = Properties()
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+}
+
+val storeFilePath = keystoreProperties.getProperty("storeFile") ?: System.getenv("KEYSTORE_FILE")
+val storePass = keystoreProperties.getProperty("storePassword") ?: System.getenv("KEYSTORE_PASSWORD")
+val kAlias = keystoreProperties.getProperty("keyAlias") ?: System.getenv("KEY_ALIAS")
+val kPass = keystoreProperties.getProperty("keyPassword") ?: System.getenv("KEY_PASSWORD")
 
 android {
     namespace = "com.example.calculator"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.example.calculator"
+        applicationId = "io.github.markhoodwink.mbcal"
         minSdk = 26
         targetSdk = 37
-        versionCode = 4
-        versionName = "2.1"
+        versionCode = 5
+        versionName = "2.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    buildFeatures {
+        buildConfig = true
+    }
+
+    signingConfigs {
+        create("releaseConfig") {
+            if (!storeFilePath.isNullOrBlank() && !storePass.isNullOrBlank() && !kAlias.isNullOrBlank() && !kPass.isNullOrBlank()) {
+                storeFile = file(storeFilePath)
+                storePassword = storePass
+                keyAlias = kAlias
+                keyPassword = kPass
+            }
+        }
+    }
+
+    flavorDimensions += "store"
+    productFlavors {
+        create("github") {
+            dimension = "store"
+            buildConfigField("boolean", "ENABLE_GITHUB_UPDATER", "true")
+        }
+        create("rustore") {
+            dimension = "store"
+            buildConfigField("boolean", "ENABLE_GITHUB_UPDATER", "false")
+        }
     }
 
     packaging {
@@ -25,7 +66,12 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("debug")
+            val relConfig = signingConfigs.findByName("releaseConfig")
+            if (relConfig != null && relConfig.storeFile != null && relConfig.storeFile!!.exists()) {
+                signingConfig = relConfig
+            } else {
+                signingConfig = signingConfigs.getByName("debug")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

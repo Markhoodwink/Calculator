@@ -963,4 +963,145 @@ class ExampleUnitTest {
         assertEquals(modBoxes[0]!!.ascent, modBoxes[2]!!.ascent, 0.001f)
         assertEquals(modBoxes[0]!!.descent, modBoxes[2]!!.descent, 0.001f)
     }
+
+    @Test
+    fun testEge15LogarithmicInequalityWithVariableBase() {
+        val casEngine = CasEngine()
+        val result = InequalitySolverEngine.solve("log((log((5),(x)) - 3),(2 * (log((5),(x)))^2 - 7 * log((5),(x)) + 3)) > 1", casEngine)
+        assertNull("Expected no error for EGE #15 inequality, got: ${result.errorMessage}", result.errorMessage)
+        assertEquals("x ∈ (625; +∞)", result.answerFormula)
+        val cpLabels = result.criticalPoints.map { it.label }
+        assertTrue("Expected critical points to contain 125, got: $cpLabels", cpLabels.contains("125"))
+        assertTrue("Expected critical points to contain 625, got: $cpLabels", cpLabels.contains("625"))
+        val cp125 = result.criticalPoints.find { it.label == "125" }
+        val cp625 = result.criticalPoints.find { it.label == "625" }
+        assertNotNull(cp125)
+        assertNotNull(cp625)
+        assertFalse("Expected 125 to be excluded by ODZ", cp125!!.isIncluded)
+        assertFalse("Expected 625 to be excluded by ODZ", cp625!!.isIncluded)
+    }
+
+    @Test
+    fun testTinyFractionalLogRoot() {
+        val casEngine = CasEngine()
+        val result = InequalitySolverEngine.solve("log((5),(x)) + 4 >= 0", casEngine)
+        assertNull("Expected no error for log_5(x) + 4 >= 0, got: ${result.errorMessage}", result.errorMessage)
+        assertEquals("x ∈ [1/625; +∞)", result.answerFormula)
+    }
+
+    @Test
+    fun testLargeLogInequalityRoot() {
+        val casEngine = CasEngine()
+        val result = InequalitySolverEngine.solve("log((2),(x)) - 10 <= 0", casEngine)
+        assertNull("Expected no error for log_2(x) - 10 <= 0, got: ${result.errorMessage}", result.errorMessage)
+        assertEquals("x ∈ (0; 1024]", result.answerFormula)
+    }
+
+    @Test
+    fun testNestedRadicalDenesting() {
+        val engine = CasEngine()
+
+        // 1. √(5 + 2√6) -> contains √3 and √2, does NOT contain √(5, detailedSteps contains "Выделение полного квадрата"
+        val res1 = engine.evaluateFull("√(5 + 2√6)")
+        assertTrue("Expected √3 in result, got: ${res1.displayFormula}", res1.displayFormula.contains("√3"))
+        assertTrue("Expected √2 in result, got: ${res1.displayFormula}", res1.displayFormula.contains("√2"))
+        assertFalse("Expected no √(5 in result, got: ${res1.displayFormula}", res1.displayFormula.contains("√(5"))
+        assertTrue(
+            "Expected detailedSteps to contain 'Выделение полного квадрата', got: ${res1.detailedSteps}",
+            res1.detailedSteps.any { it.title.contains("Выделение полного квадрата") || it.formula.contains("Выделение полного квадрата") }
+        )
+
+        // 2. √(5 - 2√6) -> equals "√3 - √2"
+        val res2 = engine.evaluateFull("√(5 - 2√6)")
+        assertEquals("√3 - √2", res2.displayFormula)
+
+        // 3. √(7 - 4√3) -> equals "2 - √3"
+        val res3 = engine.evaluateFull("√(7 - 4√3)")
+        assertEquals("2 - √3", res3.displayFormula)
+
+        // 4. √(3 + 2√2) -> contains √2 and 1, no nested √(
+        val res4 = engine.evaluateFull("√(3 + 2√2)")
+        assertTrue("Expected √2 in result, got: ${res4.displayFormula}", res4.displayFormula.contains("√2"))
+        assertTrue("Expected 1 in result, got: ${res4.displayFormula}", res4.displayFormula.contains("1"))
+        assertFalse("Expected no nested √( in result, got: ${res4.displayFormula}", res4.displayFormula.contains("√("))
+
+        // 5. √(11 - 6√2) -> equals "3 - √2"
+        val res5 = engine.evaluateFull("√(11 - 6√2)")
+        assertEquals("3 - √2", res5.displayFormula)
+
+        // 6. √(5 + 2√6) - √(5 - 2√6) -> equals "2√2" (or "2·√2")
+        val res6 = engine.evaluateFull("√(5 + 2√6) - √(5 - 2√6)")
+        assertTrue(
+            "Expected '2√2' or '2 · √2', got: ${res6.displayFormula}",
+            res6.displayFormula == "2√2" || res6.displayFormula == "2 · √2" || res6.displayFormula == "2·√2"
+        )
+
+        // 7. √(2 + √3) -> contains √6 and √2, no nested √(), numeric value equals sqrt(2 + sqrt(3)) within 1e-9
+        val res7 = engine.evaluateFull("√(2 + √3)")
+        assertTrue("Expected √6 in result, got: ${res7.displayFormula}", res7.displayFormula.contains("√6"))
+        assertTrue("Expected √2 in result, got: ${res7.displayFormula}", res7.displayFormula.contains("√2"))
+        assertFalse("Expected no nested √( in result, got: ${res7.displayFormula}", res7.displayFormula.contains("√("))
+        assertNotNull("Expected primaryNode for numeric evaluation", res7.primaryNode)
+        val numVal7 = engine.evalNodeAtX(res7.primaryNode!!, 0.0)
+        assertEquals(kotlin.math.sqrt(2.0 + kotlin.math.sqrt(3.0)), numVal7, 1e-9)
+
+        // 8. Non-denestable guard: √(5 + 2√5) stays √(5 + 2√5)
+        val res8 = engine.evaluateFull("√(5 + 2√5)")
+        assertTrue("Expected displayFormula to contain 5 + 2√5, got: ${res8.displayFormula}", res8.displayFormula.contains("5 + 2√5"))
+
+        // 9. Negative radicand guard: √(2√6 - 5) does not crash or return a bogus real radical
+        val res9 = engine.evaluateFull("√(2√6 - 5)")
+        assertTrue(
+            "Expected error message for negative radicand, got: ${res9.displayFormula}",
+            res9.displayFormula.startsWith("Ошибка") || res9.displayFormula.contains("отрицательного")
+        )
+    }
+
+    @Test
+    fun testAnsChainingNumericAndSymbolic() {
+        val engine = CasEngine()
+
+        // 1. Numeric chain
+        val res1 = engine.evaluateFull("2 + 3")
+        assertEquals("5", res1.displayFormula)
+        assertEquals("5", engine.lastAnswer)
+
+        val res2 = engine.evaluateFull("Ans + 4")
+        assertEquals("9", res2.displayFormula)
+        assertEquals("9", engine.lastAnswer)
+
+        val res3 = engine.evaluateFull("Ans^2")
+        assertEquals("81", res3.displayFormula)
+        assertEquals("81", engine.lastAnswer)
+
+        // 2. Fraction chain
+        val resFrac1 = engine.evaluateFull("1 / 3")
+        assertEquals("1/3", resFrac1.displayFormula)
+        assertEquals("1/3", engine.lastAnswer)
+
+        val resFrac2 = engine.evaluateFull("Ans * 6")
+        assertEquals("2", resFrac2.displayFormula)
+        assertEquals("2", engine.lastAnswer)
+
+        // 3. Symbolic denested radical chain
+        val resRad = engine.evaluateFull("√(5 + 2√6)")
+        val radAns = engine.lastAnswer
+        assertTrue("Expected √3 + √2 or √2 + √3, got: $radAns", radAns == "√3 + √2" || radAns == "√2 + √3")
+
+        val resRadSub = engine.evaluateFull("Ans - √2")
+        assertEquals("√3", resRadSub.displayFormula)
+
+        engine.evaluateFull("√(5 + 2√6)")
+        val resRadPow = engine.evaluateFull("Ans^2")
+        val nodeToEval = resRadPow.primaryNode!!
+        val evalVal = engine.evalNodeAtX(nodeToEval, 0.0)
+        val expectedVal = 5.0 + 2.0 * kotlin.math.sqrt(6.0)
+        assertEquals(expectedVal, evalVal, 1e-9)
+
+        // 4. Error guard
+        engine.lastAnswer = "42"
+        val resErr = engine.evaluateFull("1 / 0")
+        assertTrue(resErr.displayFormula.startsWith("Ошибка"))
+        assertEquals("42", engine.lastAnswer)
+    }
 }
